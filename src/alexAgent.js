@@ -232,7 +232,7 @@ function normalizeField(val) {
 function hasLeadChanged(prev, curr) {
   if (!prev) return false;
   return ['equipo', 'zona', 'fecha', 'dias'].some(
-    f => normalizeField(prev[f]) !== normalizeField(curr[f]) && curr[f] && prev[f]
+    f => normalizeField(prev[f]) !== normalizeField(curr[f]) && curr[f]
   );
 }
 
