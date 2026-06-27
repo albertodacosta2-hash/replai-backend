@@ -220,18 +220,25 @@ function isLeadReady(lead) {
   return Boolean(lead.nombre?.trim() && lead.equipo?.trim());
 }
 
+function normalizeField(val) {
+  return (val || '')
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s*(días?|dias?|jornadas?|horas?)\s*/gi, '')
+    .trim();
+}
+
 function hasLeadChanged(prev, curr) {
-  return ['equipo', 'zona', 'fecha', 'dias'].some(f => (prev[f] || '') !== (curr[f] || '') && curr[f]);
+  return ['equipo', 'zona', 'fecha', 'dias'].some(
+    f => normalizeField(prev[f]) !== normalizeField(curr[f]) && curr[f]
+  );
 }
 
 // ── Notificación a Beto ──
-async function notifyBeto(phone, lead, isNew, inBusinessHours, prevLead = null) {
+async function notifyBeto(phone, lead, isNew, _inBusinessHours, prevLead = null) {
   const notify = process.env.NOTIFY_PHONE;
   if (!notify) return;
-
-  const tiempoInfo = inBusinessHours
-    ? '✅ Dentro de horario — atender ahora'
-    : '🌙 Fuera de horario — contactar mañana a primera hora';
 
   const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
 
@@ -242,25 +249,15 @@ async function notifyBeto(phone, lead, isNew, inBusinessHours, prevLead = null) 
       `Cliente: ${lead.nombre}\n` +
       `Equipo: ${lead.equipo}\n` +
       `Zona: ${lead.zona || 'Por confirmar'}\n` +
-      `Fecha: ${lead.fecha || 'Por confirmar'}\n` +
       `Días: ${lead.dias || 'Por confirmar'}\n` +
-      `Número: ${formattedPhone}\n` +
-      `⏰ ${tiempoInfo}`;
+      `Número: ${formattedPhone}`;
   } else {
-    const fieldLabels = { equipo: 'Equipo', zona: 'Zona', fecha: 'Fecha', dias: 'Días' };
-    const changes = Object.entries(fieldLabels)
-      .filter(([k]) => (prevLead[k] || '') !== (lead[k] || '') && lead[k])
-      .map(([k, label]) => `${label}: ${prevLead[k] || 'No especificado'} → ${lead[k]}`)
-      .join('\n');
-
     msg =
-      `🔄 SOLICITUD MODIFICADA - Zona CAT\n` +
+      `🔄 ACTUALIZACIÓN - Zona CAT\n` +
       `Cliente: ${lead.nombre}\n` +
-      `Cambio:\n${changes}\n` +
       `Equipo: ${lead.equipo}\n` +
       `Zona: ${lead.zona || 'Por confirmar'}\n` +
-      `Número: ${formattedPhone}\n` +
-      `⏰ ${tiempoInfo}`;
+      `Número: ${formattedPhone}`;
   }
 
   await sendWhatsAppMeta(notify, msg);
