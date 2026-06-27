@@ -37,7 +37,7 @@ REGLAS:
 - No des información de propiedades específicas — eso lo hace ${realtor} en la consulta.`;
 }
 
-async function handleMessage(leadId, phone) {
+async function handleMessage(leadId, phone, sendFn = sendWhatsApp) {
   // Check if AI is active for this lead
   const leadRow = await pool.query('SELECT ai_active FROM leads WHERE id = $1', [leadId]);
   if (!leadRow.rows[0]?.ai_active) return;
@@ -75,7 +75,7 @@ async function handleMessage(leadId, phone) {
   await pool.query(`UPDATE leads SET status = 'Contacted', updated_at = NOW() WHERE id = $1 AND status = 'New'`, [leadId]);
 
   // Send reply via WhatsApp
-  await sendWhatsApp(phone, reply);
+  await sendFn(phone, reply);
 
   // Try to extract qualification data
   const qualification = await extractQualification(history);

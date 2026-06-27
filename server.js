@@ -10,6 +10,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 app.use('/api/leads', require('./routes/leads'));
+app.use('/webhook',   require('./routes/webhook'));
 
 app.get('/health', (_req, res) => res.json({ ok: true, agent: process.env.AGENT_NAME }));
 
