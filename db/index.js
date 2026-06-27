@@ -23,10 +23,13 @@ async function initDb() {
       owner       TEXT,
       tags        TEXT DEFAULT '[]',
       notes       TEXT,
-      ai_active   INTEGER DEFAULT 1,
-      created_at  TIMESTAMPTZ DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ DEFAULT NOW()
+      ai_active    INTEGER DEFAULT 1,
+      lead_notified BOOLEAN DEFAULT false,
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ DEFAULT NOW()
     );
+
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_notified BOOLEAN DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS messages (
       id          SERIAL PRIMARY KEY,

@@ -270,7 +270,10 @@ async function handleIncoming(phone, userMessage) {
   const inBusinessHours = isVenezuelaBusinessHours();
 
   // Upsert lead en PostgreSQL
-  const existing = await pool.query('SELECT id FROM leads WHERE phone = $1', [phone]);
+  const existing = await pool.query(
+    'SELECT id, lead_notified, name FROM leads WHERE phone = $1',
+    [phone]
+  );
   let leadId;
   if (existing.rows[0]) {
     leadId = existing.rows[0].id;
@@ -301,6 +304,12 @@ async function handleIncoming(phone, userMessage) {
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.body,
     }));
+    // Restaurar estado de notificación desde DB para sobrevivir reinicios
+    const dbRow = existing.rows[0];
+    if (dbRow?.lead_notified) {
+      session.leadNotified = true;
+      if (dbRow.name) session.lastLead = { nombre: dbRow.name };
+    }
   }
   session.messages.push({ role: 'user', content: userMessage });
 
@@ -347,7 +356,7 @@ async function handleIncoming(phone, userMessage) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
-          `UPDATE leads SET name = $1, status = 'Qualified', updated_at = NOW() WHERE id = $2`,
+          `UPDATE leads SET name = $1, status = 'Qualified', lead_notified = true, updated_at = NOW() WHERE id = $2`,
           [lead.nombre, leadId]
         );
         await notifyBeto(phone, lead, true, inBusinessHours);
