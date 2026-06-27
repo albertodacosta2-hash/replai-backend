@@ -230,8 +230,9 @@ function normalizeField(val) {
 }
 
 function hasLeadChanged(prev, curr) {
+  if (!prev) return false;
   return ['equipo', 'zona', 'fecha', 'dias'].some(
-    f => normalizeField(prev[f]) !== normalizeField(curr[f]) && curr[f]
+    f => normalizeField(prev[f]) !== normalizeField(curr[f]) && curr[f] && prev[f]
   );
 }
 
@@ -271,7 +272,7 @@ async function handleIncoming(phone, userMessage) {
 
   // Upsert lead en PostgreSQL
   const existing = await pool.query(
-    'SELECT id, lead_notified, name FROM leads WHERE phone = $1',
+    'SELECT id, lead_notified, name, last_lead_data FROM leads WHERE phone = $1',
     [phone]
   );
   let leadId;
@@ -308,7 +309,7 @@ async function handleIncoming(phone, userMessage) {
     const dbRow = existing.rows[0];
     if (dbRow?.lead_notified) {
       session.leadNotified = true;
-      if (dbRow.name) session.lastLead = { nombre: dbRow.name };
+      session.lastLead = dbRow.last_lead_data || (dbRow.name ? { nombre: dbRow.name } : null);
     }
   }
   session.messages.push({ role: 'user', content: userMessage });
@@ -356,13 +357,18 @@ async function handleIncoming(phone, userMessage) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
-          `UPDATE leads SET name = $1, status = 'Qualified', lead_notified = true, updated_at = NOW() WHERE id = $2`,
-          [lead.nombre, leadId]
+          `UPDATE leads SET name = $1, status = 'Qualified', lead_notified = true,
+           last_lead_data = $3, updated_at = NOW() WHERE id = $2`,
+          [lead.nombre, leadId, JSON.stringify(lead)]
         );
         await notifyBeto(phone, lead, true, inBusinessHours);
       } else if (hasLeadChanged(session.lastLead, lead)) {
         const prev = session.lastLead;
         session.lastLead = { ...lead };
+        await pool.query(
+          `UPDATE leads SET last_lead_data = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(lead), leadId]
+        );
         await notifyBeto(phone, lead, false, inBusinessHours, prev);
       }
     }

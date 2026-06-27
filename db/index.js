@@ -23,13 +23,15 @@ async function initDb() {
       owner       TEXT,
       tags        TEXT DEFAULT '[]',
       notes       TEXT,
-      ai_active    INTEGER DEFAULT 1,
-      lead_notified BOOLEAN DEFAULT false,
-      created_at   TIMESTAMPTZ DEFAULT NOW(),
-      updated_at   TIMESTAMPTZ DEFAULT NOW()
+      ai_active      INTEGER DEFAULT 1,
+      lead_notified  BOOLEAN DEFAULT false,
+      last_lead_data JSONB DEFAULT NULL,
+      created_at     TIMESTAMPTZ DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ DEFAULT NOW()
     );
 
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_notified BOOLEAN DEFAULT false;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_lead_data JSONB DEFAULT NULL;
 
     CREATE TABLE IF NOT EXISTS messages (
       id          SERIAL PRIMARY KEY,
