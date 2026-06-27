@@ -216,6 +216,23 @@ async function extractLead(history) {
   }
 }
 
+async function extractFromMessage(msg) {
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      tools: [LEAD_TOOL],
+      tool_choice: { type: 'any' },
+      messages: [{ role: 'user', content: `Extrae datos del cliente de este mensaje. SOLO completa campos mencionados EXPLÍCITAMENTE en este mensaje.\n\n${msg}` }],
+    });
+    const toolUse = response.content.find(b => b.type === 'tool_use');
+    return toolUse?.input ?? {};
+  } catch (err) {
+    console.error('[alexAgent] extractFromMessage error:', err.message);
+    return {};
+  }
+}
+
 function isLeadReady(lead) {
   return Boolean(lead.nombre?.trim() && lead.equipo?.trim());
 }
@@ -287,14 +304,7 @@ async function handleIncoming(phone, userMessage) {
     leadId = rows[0].id;
   }
 
-  // Guardar mensaje entrante
-  await pool.query(
-    `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'inbound', 'lead', $2)`,
-    [leadId, userMessage]
-  );
-  await pool.query('UPDATE leads SET updated_at = NOW() WHERE id = $1', [leadId]);
-
-  // Historial en memoria — cargar desde DB si la sesión está vacía (ej: tras redeploy)
+  // Cargar historial desde DB ANTES de guardar el mensaje actual (evita duplicados)
   const session = getSession(phone);
   if (session.messages.length === 0) {
     const { rows: hist } = await pool.query(
@@ -309,10 +319,25 @@ async function handleIncoming(phone, userMessage) {
     const dbRow = existing.rows[0];
     if (dbRow?.lead_notified) {
       session.leadNotified = true;
-      session.lastLead = dbRow.last_lead_data || (dbRow.name ? { nombre: dbRow.name } : null);
+      if (dbRow.last_lead_data) {
+        session.lastLead = dbRow.last_lead_data;
+      } else {
+        // Reconstruir lastLead desde historial para leads anteriores a la columna last_lead_data
+        const reconstructed = await extractLead(session.messages);
+        session.lastLead = (reconstructed && Object.keys(reconstructed).length > 0)
+          ? reconstructed
+          : (dbRow.name ? { nombre: dbRow.name } : null);
+      }
     }
   }
+
+  // Agregar mensaje actual a sesión y guardarlo en DB
   session.messages.push({ role: 'user', content: userMessage });
+  await pool.query(
+    `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'inbound', 'lead', $2)`,
+    [leadId, userMessage]
+  );
+  await pool.query('UPDATE leads SET updated_at = NOW() WHERE id = $1', [leadId]);
 
   // Llamar a Claude
   let reply = 'Un momento, déjame verificar eso para ti 😊';
@@ -351,9 +376,10 @@ async function handleIncoming(phone, userMessage) {
 
   // Extracción de lead y notificación a Beto
   try {
-    const lead = await extractLead(session.messages);
-    if (lead && isLeadReady(lead)) {
-      if (!session.leadNotified) {
+    if (!session.leadNotified) {
+      // Primera notificación: extraer del historial completo
+      const lead = await extractLead(session.messages);
+      if (lead && isLeadReady(lead)) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
@@ -362,14 +388,18 @@ async function handleIncoming(phone, userMessage) {
           [lead.nombre, leadId, JSON.stringify(lead)]
         );
         await notifyBeto(phone, lead, true, inBusinessHours);
-      } else if (hasLeadChanged(session.lastLead, lead)) {
+      }
+    } else {
+      // Ya notificado: buscar cambios SOLO en el mensaje actual
+      const update = await extractFromMessage(userMessage);
+      if (update && hasLeadChanged(session.lastLead, update)) {
         const prev = session.lastLead;
-        session.lastLead = { ...lead };
+        session.lastLead = { ...session.lastLead, ...update };
         await pool.query(
           `UPDATE leads SET last_lead_data = $1, updated_at = NOW() WHERE id = $2`,
-          [JSON.stringify(lead), leadId]
+          [JSON.stringify(session.lastLead), leadId]
         );
-        await notifyBeto(phone, lead, false, inBusinessHours, prev);
+        await notifyBeto(phone, session.lastLead, false, inBusinessHours, prev);
       }
     }
   } catch (err) {
