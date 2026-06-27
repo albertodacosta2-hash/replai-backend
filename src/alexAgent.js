@@ -236,8 +236,18 @@ async function handleIncoming(phone, userMessage) {
   );
   await pool.query('UPDATE leads SET updated_at = NOW() WHERE id = $1', [leadId]);
 
-  // Historial en memoria
+  // Historial en memoria — cargar desde DB si la sesión está vacía (ej: tras redeploy)
   const session = getSession(phone);
+  if (session.messages.length === 0) {
+    const { rows: hist } = await pool.query(
+      'SELECT direction, body FROM messages WHERE lead_id = $1 ORDER BY created_at ASC',
+      [leadId]
+    );
+    session.messages = hist.map(m => ({
+      role: m.direction === 'inbound' ? 'user' : 'assistant',
+      content: m.body,
+    }));
+  }
   session.messages.push({ role: 'user', content: userMessage });
 
   // Llamar a Claude
