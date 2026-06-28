@@ -13,6 +13,7 @@ router.post('/',              ctrl.createLead);
 router.patch('/:id',          ctrl.updateLead);
 router.get('/:id/messages',   ctrl.getMessages);
 router.post('/:id/messages',  ctrl.addMessage);
+router.post('/:id/send-message', ctrl.sendHumanMessage);
 
 // ── Twilio WhatsApp Webhook ──
 router.post('/webhook/twilio', async (req, res) => {

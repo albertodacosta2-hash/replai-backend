@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const { sendWhatsAppMeta } = require('../src/metaSender');
 
 // GET /api/leads
 async function getLeads(req, res) {
@@ -115,6 +116,32 @@ async function addMessage(req, res) {
   }
 }
 
+// POST /api/leads/:id/send-message
+async function sendHumanMessage(req, res) {
+  try {
+    const { id } = req.params;
+    const { body } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'body required' });
+
+    const { rows } = await pool.query('SELECT phone FROM leads WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
+
+    const { phone } = rows[0];
+    await sendWhatsAppMeta(phone, body);
+    await pool.query(
+      `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
+      [id, body]
+    );
+    await pool.query(
+      `UPDATE leads SET ai_active = 0, updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 // GET /api/leads/stats
 async function getStats(req, res) {
   try {
@@ -146,4 +173,4 @@ function parseLead(lead) {
   return { ...lead, tags: JSON.parse(lead.tags || '[]'), ai_active: Boolean(lead.ai_active) };
 }
 
-module.exports = { getLeads, getLeadById, createLead, updateLead, getMessages, addMessage, getStats };
+module.exports = { getLeads, getLeadById, createLead, updateLead, getMessages, addMessage, getStats, sendHumanMessage };

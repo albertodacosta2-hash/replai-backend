@@ -9,9 +9,48 @@ const sessions = new Map();
 
 function getSession(phone) {
   if (!sessions.has(phone)) {
-    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null });
+    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null, followUpSent: false });
   }
   return sessions.get(phone);
+}
+
+// ── Follow-up automático (20 min sin respuesta → 1 mensaje) ──
+const followUpTimers = {};
+const FOLLOW_UP_MS = 20 * 60 * 1000;
+
+function cancelFollowUp(phone) {
+  if (followUpTimers[phone]) {
+    clearTimeout(followUpTimers[phone]);
+    delete followUpTimers[phone];
+  }
+}
+
+function scheduleFollowUp(phone, session, leadId) {
+  cancelFollowUp(phone);
+  if (session.followUpSent || session.leadNotified) return;
+
+  followUpTimers[phone] = setTimeout(async () => {
+    delete followUpTimers[phone];
+    if (session.followUpSent || session.leadNotified) return;
+    session.followUpSent = true;
+
+    const equipo = session.lastLead?.equipo;
+    const msg = equipo
+      ? `Hola, ¿te quedó alguna duda sobre ${equipo}? 😊`
+      : 'Hola, ¿pudiste ver mi mensaje? 😊 Cualquier pregunta sobre la maquinaria estoy aquí para ayudarte';
+
+    try {
+      await sendWhatsAppMeta(phone, msg);
+      await pool.query(
+        `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
+        [leadId, msg]
+      );
+      session.messages.push({ role: 'assistant', content: msg });
+      console.log(`[alexAgent] follow-up enviado → ${phone}`);
+    } catch (err) {
+      console.error('[alexAgent] follow-up send error:', err.message);
+    }
+  }, FOLLOW_UP_MS);
 }
 
 // ── Debounce (buffer de mensajes por número) ──
@@ -289,9 +328,14 @@ async function handleIncoming(phone, userMessage) {
 
   // Upsert lead en PostgreSQL
   const existing = await pool.query(
-    'SELECT id, lead_notified, name, last_lead_data FROM leads WHERE phone = $1',
+    'SELECT id, lead_notified, name, last_lead_data, ai_active FROM leads WHERE phone = $1',
     [phone]
   );
+  if (existing.rows[0]?.ai_active === 0) {
+    console.log(`[alexAgent] ai_active=0 para ${phone} — mensaje ignorado (human takeover)`);
+    return;
+  }
+
   let leadId;
   if (existing.rows[0]) {
     leadId = existing.rows[0].id;
@@ -370,6 +414,7 @@ async function handleIncoming(phone, userMessage) {
   try {
     await sendWhatsAppMeta(phone, reply);
     console.log('[alexAgent] WhatsApp enviado OK');
+    scheduleFollowUp(phone, session, leadId);
   } catch (err) {
     console.error('[alexAgent] WhatsApp send error:', err.message);
   }
@@ -409,6 +454,7 @@ async function handleIncoming(phone, userMessage) {
 
 // ── enqueue: debounce + cola por número ──
 function enqueue(phone, message) {
+  cancelFollowUp(phone);
   const state = getPhoneState(phone);
   state.buffer.push(message);
   console.log(`[alexAgent:queue] +msg "${phone}" (${state.buffer.length} en buffer)`);
