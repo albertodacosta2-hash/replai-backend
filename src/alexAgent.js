@@ -446,8 +446,9 @@ async function handleIncoming(phone, userMessage) {
   try {
     if (!session.leadNotified) {
       // Primera notificación: extraer del historial completo
+      // Guard: nombre + equipo ambos presentes antes de notificar
       const lead = await extractLead(session.messages);
-      if (lead && isLeadReady(lead)) {
+      if (lead && isLeadReady(lead) && lead.nombre?.trim()) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
@@ -457,17 +458,21 @@ async function handleIncoming(phone, userMessage) {
         );
         await notifyBeto(phone, lead, true, inBusinessHours);
       }
+      // Si no tiene nombre+máquina → no hacer nada todavía
     } else {
-      // Ya notificado: buscar cambios SOLO en el mensaje actual
-      const update = await extractFromMessage(userMessage);
-      if (update && hasLeadChanged(session.lastLead, update)) {
-        const prev = session.lastLead;
-        session.lastLead = { ...session.lastLead, ...update };
-        await pool.query(
-          `UPDATE leads SET last_lead_data = $1, updated_at = NOW() WHERE id = $2`,
-          [JSON.stringify(session.lastLead), leadId]
-        );
-        await notifyBeto(phone, session.lastLead, false, inBusinessHours, prev);
+      // Guard: no mandar ACTUALIZACIÓN si session.lastLead no tiene nombre
+      // (protege contra stale state donde leadNotified=true pero lastLead incompleto)
+      if (session.lastLead?.nombre) {
+        const update = await extractFromMessage(userMessage);
+        if (update && hasLeadChanged(session.lastLead, update)) {
+          const prev = session.lastLead;
+          session.lastLead = { ...session.lastLead, ...update };
+          await pool.query(
+            `UPDATE leads SET last_lead_data = $1, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(session.lastLead), leadId]
+          );
+          await notifyBeto(phone, session.lastLead, false, inBusinessHours, prev);
+        }
       }
     }
   } catch (err) {
