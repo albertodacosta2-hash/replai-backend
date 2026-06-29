@@ -362,18 +362,13 @@ async function handleIncoming(phone, userMessage) {
       content: m.body,
     }));
     // Restaurar estado de notificación desde DB para sobrevivir reinicios
+    // session.lastLead queda null intencionalmente: si el cliente vuelve a escribir
+    // después de haber sido calificado, no asumimos que es el mismo pedido.
+    // hasLeadChanged no puede disparar hasta que dé info nueva en esta sesión.
     const dbRow = existing.rows[0];
     if (dbRow?.lead_notified) {
       session.leadNotified = true;
-      if (dbRow.last_lead_data) {
-        session.lastLead = dbRow.last_lead_data;
-      } else {
-        // Reconstruir lastLead desde historial para leads anteriores a la columna last_lead_data
-        const reconstructed = await extractLead(session.messages);
-        session.lastLead = (reconstructed && Object.keys(reconstructed).length > 0)
-          ? reconstructed
-          : (dbRow.name ? { nombre: dbRow.name } : null);
-      }
+      session.lastLead = null;
     } else {
       // Fix 1: reset explícito si DB dice lead_notified=false (cubre resets manuales post-reinicio)
       session.leadNotified = false;
