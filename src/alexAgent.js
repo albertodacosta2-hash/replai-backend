@@ -466,8 +466,9 @@ async function handleIncoming(phone, userMessage) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
-          `UPDATE leads SET name = $1, status = 'Qualified', stage = 'profiled', lead_notified = true,
-           last_lead_data = $3, updated_at = NOW() WHERE id = $2`,
+          `UPDATE leads SET name = $1, status = 'Qualified',
+           stage = CASE WHEN stage IN ('new', 'replied') THEN 'profiled' ELSE stage END,
+           lead_notified = true, last_lead_data = $3, updated_at = NOW() WHERE id = $2`,
           [lead.nombre, leadId, JSON.stringify(lead)]
         );
         session.notifiedAt = Date.now();
