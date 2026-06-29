@@ -372,7 +372,18 @@ async function handleIncoming(phone, userMessage) {
           ? reconstructed
           : (dbRow.name ? { nombre: dbRow.name } : null);
       }
+    } else {
+      // Fix 1: reset explícito si DB dice lead_notified=false (cubre resets manuales post-reinicio)
+      session.leadNotified = false;
+      session.lastLead = null;
     }
+  }
+
+  // Fix 2: sincronizar estado en memoria con DB aunque el server no se haya reiniciado
+  // Cubre el caso de reset manual mientras el server estaba corriendo
+  if (session.leadNotified && !existing.rows[0]?.lead_notified) {
+    session.leadNotified = false;
+    session.lastLead = null;
   }
 
   // Agregar mensaje actual a sesión y guardarlo en DB
