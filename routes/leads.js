@@ -4,6 +4,7 @@ const twilio = require('twilio');
 const { pool } = require('../db');
 const ctrl = require('../controllers/leadsController');
 const { handleMessage } = require('../src/agent');
+const { clearSession } = require('../src/alexAgent');
 
 // ── REST API ──
 router.get('/stats',          ctrl.getStats);
@@ -17,6 +18,12 @@ router.post('/:id/messages',  ctrl.addMessage);
 router.post('/:id/send-message',  ctrl.sendHumanMessage);
 router.patch('/:id/stage',        ctrl.updateStage);
 router.post('/:id/reactivate',    ctrl.reactivateLead);
+
+// ── Session reset (para tests) ──
+router.get('/reset-session/:phone', (req, res) => {
+  clearSession(decodeURIComponent(req.params.phone));
+  res.json({ ok: true });
+});
 
 // ── Twilio WhatsApp Webhook ──
 router.post('/webhook/twilio', async (req, res) => {

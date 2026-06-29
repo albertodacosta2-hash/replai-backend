@@ -9,9 +9,16 @@ const sessions = new Map();
 
 function getSession(phone) {
   if (!sessions.has(phone)) {
-    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null, followUpSent: false });
+    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null, followUpSent: false, notifiedAt: null });
   }
   return sessions.get(phone);
+}
+
+function clearSession(phone) {
+  sessions.delete(phone);
+  phoneState.delete(phone);
+  cancelFollowUp(phone);
+  console.log(`[alexAgent] sesión en memoria limpiada → ${phone}`);
 }
 
 // ── Follow-up automático (20 min sin respuesta → 1 mensaje) ──
@@ -455,13 +462,15 @@ async function handleIncoming(phone, userMessage) {
            last_lead_data = $3, updated_at = NOW() WHERE id = $2`,
           [lead.nombre, leadId, JSON.stringify(lead)]
         );
+        session.notifiedAt = Date.now();
         await notifyBeto(phone, lead, true, inBusinessHours);
       }
       // Si no tiene nombre+máquina → no hacer nada todavía
     } else {
-      // Guard: no mandar ACTUALIZACIÓN si session.lastLead no tiene nombre
-      // (protege contra stale state donde leadNotified=true pero lastLead incompleto)
-      if (session.lastLead?.nombre) {
+      // Guard 1: no mandar ACTUALIZACIÓN si session.lastLead no tiene nombre
+      // Guard 2: debounce de 2 min después de CLIENTE LISTO para evitar spam de ACTUALIZACIÓN
+      const debounceOk = !session.notifiedAt || (Date.now() - session.notifiedAt > 2 * 60 * 1000);
+      if (session.lastLead?.nombre && debounceOk) {
         const update = await extractFromMessage(userMessage);
         if (update && hasLeadChanged(session.lastLead, update)) {
           const prev = session.lastLead;
@@ -523,4 +532,4 @@ async function _processNext(phone, batch) {
   }
 }
 
-module.exports = { enqueue };
+module.exports = { enqueue, clearSession };
