@@ -420,7 +420,9 @@ async function handleIncoming(phone, userMessage) {
     `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
     [leadId, reply]
   );
+  console.log(`[alexAgent] detectando cierre: ${reply.slice(0, 120)}`);
   const isClosingPhrase = reply.toLowerCase().includes('un asesor del equipo te va a contactar');
+  console.log(`[alexAgent] isClosingPhrase=${isClosingPhrase}`);
   await pool.query(
     `UPDATE leads
      SET status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END,
