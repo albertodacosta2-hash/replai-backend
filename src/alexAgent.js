@@ -341,8 +341,8 @@ async function handleIncoming(phone, userMessage) {
     leadId = existing.rows[0].id;
   } else {
     const { rows } = await pool.query(
-      `INSERT INTO leads (phone, channel, source, status)
-       VALUES ($1, 'meta_whatsapp', 'Meta WhatsApp Inbound', 'New') RETURNING id`,
+      `INSERT INTO leads (phone, channel, source, status, stage)
+       VALUES ($1, 'meta_whatsapp', 'Meta WhatsApp Inbound', 'New', 'new') RETURNING id`,
       [phone]
     );
     leadId = rows[0].id;
@@ -381,7 +381,14 @@ async function handleIncoming(phone, userMessage) {
     `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'inbound', 'lead', $2)`,
     [leadId, userMessage]
   );
-  await pool.query('UPDATE leads SET updated_at = NOW() WHERE id = $1', [leadId]);
+  await pool.query(
+    `UPDATE leads
+     SET last_activity_at = NOW(),
+         stage = CASE WHEN stage = 'new' THEN 'replied' ELSE stage END,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [leadId]
+  );
 
   // Llamar a Claude
   let reply = 'Un momento, déjame verificar eso para ti 😊';
@@ -405,9 +412,14 @@ async function handleIncoming(phone, userMessage) {
     `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
     [leadId, reply]
   );
+  const isClosingPhrase = reply.toLowerCase().includes('un asesor del equipo te va a contactar');
   await pool.query(
-    `UPDATE leads SET status = 'Contacted', updated_at = NOW() WHERE id = $1 AND status = 'New'`,
-    [leadId]
+    `UPDATE leads
+     SET status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END,
+         stage  = CASE WHEN $2 THEN 'appointment' ELSE stage END,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [leadId, isClosingPhrase]
   );
 
   // Enviar respuesta al cliente
@@ -428,7 +440,7 @@ async function handleIncoming(phone, userMessage) {
         session.leadNotified = true;
         session.lastLead = { ...lead };
         await pool.query(
-          `UPDATE leads SET name = $1, status = 'Qualified', lead_notified = true,
+          `UPDATE leads SET name = $1, status = 'Qualified', stage = 'profiled', lead_notified = true,
            last_lead_data = $3, updated_at = NOW() WHERE id = $2`,
           [lead.nombre, leadId, JSON.stringify(lead)]
         );

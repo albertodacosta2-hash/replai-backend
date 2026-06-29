@@ -7,13 +7,16 @@ const { handleMessage } = require('../src/agent');
 
 // ── REST API ──
 router.get('/stats',          ctrl.getStats);
+router.get('/nurturing',      ctrl.getNurturing);
 router.get('/',               ctrl.getLeads);
 router.get('/:id',            ctrl.getLeadById);
 router.post('/',              ctrl.createLead);
 router.patch('/:id',          ctrl.updateLead);
 router.get('/:id/messages',   ctrl.getMessages);
 router.post('/:id/messages',  ctrl.addMessage);
-router.post('/:id/send-message', ctrl.sendHumanMessage);
+router.post('/:id/send-message',  ctrl.sendHumanMessage);
+router.patch('/:id/stage',        ctrl.updateStage);
+router.post('/:id/reactivate',    ctrl.reactivateLead);
 
 // ── Twilio WhatsApp Webhook ──
 router.post('/webhook/twilio', async (req, res) => {
