@@ -352,7 +352,9 @@ async function handleIncoming(phone, userMessage) {
   const session = getSession(phone);
   if (session.messages.length === 0) {
     const { rows: hist } = await pool.query(
-      'SELECT direction, body FROM messages WHERE lead_id = $1 ORDER BY created_at ASC',
+      `SELECT direction, sender, body, created_at FROM messages
+       WHERE lead_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at ASC`,
       [leadId]
     );
     session.messages = hist.map(m => ({
