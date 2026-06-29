@@ -427,17 +427,25 @@ async function handleIncoming(phone, userMessage) {
     `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
     [leadId, reply]
   );
+  await pool.query(
+    `UPDATE leads SET status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END,
+     updated_at = NOW() WHERE id = $1`,
+    [leadId]
+  );
   console.log(`[alexAgent] detectando cierre: ${reply.slice(0, 120)}`);
   const isClosingPhrase = reply.toLowerCase().includes('un asesor del equipo te va a contactar');
   console.log(`[alexAgent] isClosingPhrase=${isClosingPhrase}`);
-  await pool.query(
-    `UPDATE leads
-     SET status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END,
-         stage  = CASE WHEN $2 THEN 'appointment' ELSE stage END,
-         updated_at = NOW()
-     WHERE id = $1`,
-    [leadId, isClosingPhrase]
-  );
+  if (isClosingPhrase) {
+    try {
+      await pool.query(
+        `UPDATE leads SET stage = 'appointment', updated_at = NOW() WHERE id = $1`,
+        [leadId]
+      );
+      console.log('[alexAgent] stage → appointment para lead', leadId);
+    } catch (err) {
+      console.error('[alexAgent] ERROR actualizando stage appointment:', err.message);
+    }
+  }
 
   // Enviar respuesta al cliente
   try {
