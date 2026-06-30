@@ -1,7 +1,29 @@
+const { Readable, PassThrough } = require('stream');
 const { pool } = require('../db');
 const { sendWhatsAppMeta, uploadMediaToMeta, sendWhatsAppMedia } = require('../src/metaSender');
 const Anthropic = require('@anthropic-ai/sdk');
 const anthropic = new Anthropic();
+
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
+function convertWebmToOgg(buffer) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const outStream = new PassThrough();
+    outStream.on('data', c => chunks.push(c));
+    outStream.on('end', () => resolve(Buffer.concat(chunks)));
+    outStream.on('error', reject);
+    ffmpeg()
+      .input(Readable.from(buffer))
+      .inputFormat('webm')
+      .audioCodec('libopus')
+      .format('ogg')
+      .on('error', reject)
+      .pipe(outStream, { end: true });
+  });
+}
 
 // GET /api/leads
 async function getLeads(req, res) {
@@ -156,16 +178,27 @@ async function sendMediaMessage(req, res) {
     if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
     const { phone } = rows[0];
 
-    const mediaType = req.file.mimetype.startsWith('image/') ? 'image'
-      : req.file.mimetype.startsWith('audio/') ? 'audio'
+    let { buffer, mimetype, originalname: filename } = req.file;
+
+    // Meta only accepts audio/ogg, audio/mp4, audio/mpeg, audio/amr, audio/aac
+    // Chrome MediaRecorder produces audio/webm — convert to ogg/opus first
+    if (mimetype.startsWith('audio/webm')) {
+      console.log('[sendMedia] converting webm → ogg/opus');
+      buffer = await convertWebmToOgg(buffer);
+      mimetype = 'audio/ogg; codecs=opus';
+      filename = filename.replace(/\.webm$/, '.ogg');
+    }
+
+    const mediaType = mimetype.startsWith('image/') ? 'image'
+      : mimetype.startsWith('audio/') ? 'audio'
       : 'document';
 
-    const mediaId = await uploadMediaToMeta(req.file.buffer, req.file.mimetype, req.file.originalname);
-    await sendWhatsAppMedia(phone, mediaId, mediaType, req.file.originalname);
+    const mediaId = await uploadMediaToMeta(buffer, mimetype, filename);
+    await sendWhatsAppMedia(phone, mediaId, mediaType, filename);
 
     await pool.query(
       `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
-      [id, `[archivo: ${req.file.originalname}]`]
+      [id, `[archivo: ${filename}]`]
     );
     await pool.query(`UPDATE leads SET ai_active = 0, updated_at = NOW() WHERE id = $1`, [id]);
 
