@@ -196,9 +196,10 @@ async function sendMediaMessage(req, res) {
     const mediaId = await uploadMediaToMeta(buffer, mimetype, filename);
     await sendWhatsAppMedia(phone, mediaId, mediaType, filename);
 
+    const msgBody = mediaType === 'audio' ? `[audio:${mediaId}]` : `[archivo: ${filename}]`;
     await pool.query(
       `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
-      [id, `[archivo: ${filename}]`]
+      [id, msgBody]
     );
     await pool.query(`UPDATE leads SET ai_active = 0, updated_at = NOW() WHERE id = $1`, [id]);
 
