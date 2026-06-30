@@ -67,6 +67,10 @@ function scheduleFollowUp(phone, session, leadId) {
       );
       session.messages.push({ role: 'assistant', content: msg });
       console.log(`[alexAgent] follow-up ${session.followUpCount}/3 enviado → ${phone}`);
+      if (session.followUpCount >= 3) {
+        await pool.query(`UPDATE leads SET nurturing = true, updated_at = NOW() WHERE id = $1`, [leadId]);
+        console.log(`[alexAgent] lead → nurturing → ${phone}`);
+      }
     } catch (err) {
       console.error('[alexAgent] follow-up send error:', err.message);
     }
@@ -350,12 +354,16 @@ async function handleIncoming(phone, userMessage) {
 
   // Upsert lead en PostgreSQL
   const existing = await pool.query(
-    'SELECT id, lead_notified, name, last_lead_data, ai_active FROM leads WHERE phone = $1',
+    'SELECT id, lead_notified, name, last_lead_data, ai_active, nurturing FROM leads WHERE phone = $1',
     [phone]
   );
   if (existing.rows[0]?.ai_active === 0) {
     console.log(`[alexAgent] ai_active=0 para ${phone} — mensaje ignorado (human takeover)`);
     return;
+  }
+  if (existing.rows[0]?.nurturing) {
+    await pool.query(`UPDATE leads SET nurturing = false, updated_at = NOW() WHERE id = $1`, [existing.rows[0].id]);
+    console.log(`[alexAgent] lead salió de nurturing → ${phone}`);
   }
 
   let leadId;
