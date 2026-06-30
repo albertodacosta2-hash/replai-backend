@@ -1,5 +1,5 @@
 const { pool } = require('../db');
-const { sendWhatsAppMeta } = require('../src/metaSender');
+const { sendWhatsAppMeta, uploadMediaToMeta, sendWhatsAppMedia } = require('../src/metaSender');
 const Anthropic = require('@anthropic-ai/sdk');
 const anthropic = new Anthropic();
 
@@ -146,6 +146,35 @@ async function sendHumanMessage(req, res) {
   }
 }
 
+// POST /api/leads/:id/send-media
+async function sendMediaMessage(req, res) {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+
+    const { rows } = await pool.query('SELECT phone FROM leads WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
+    const { phone } = rows[0];
+
+    const mediaType = req.file.mimetype.startsWith('image/') ? 'image'
+      : req.file.mimetype.startsWith('audio/') ? 'audio'
+      : 'document';
+
+    const mediaId = await uploadMediaToMeta(req.file.buffer, req.file.mimetype, req.file.originalname);
+    await sendWhatsAppMedia(phone, mediaId, mediaType, req.file.originalname);
+
+    await pool.query(
+      `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
+      [id, `[archivo: ${req.file.originalname}]`]
+    );
+    await pool.query(`UPDATE leads SET ai_active = 0, updated_at = NOW() WHERE id = $1`, [id]);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 // GET /api/leads/nurturing
 async function getNurturing(req, res) {
   try {
@@ -281,5 +310,5 @@ function parseLead(lead) {
 
 module.exports = {
   getLeads, getLeadById, createLead, updateLead, getMessages, addMessage,
-  getStats, sendHumanMessage, getNurturing, updateStage, reactivateLead, archiveLead,
+  getStats, sendHumanMessage, sendMediaMessage, getNurturing, updateStage, reactivateLead, archiveLead,
 };

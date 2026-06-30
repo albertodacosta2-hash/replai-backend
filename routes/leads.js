@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const twilio = require('twilio');
 const { pool } = require('../db');
 const ctrl = require('../controllers/leadsController');
 const { handleMessage } = require('../src/agent');
 const { clearSession } = require('../src/alexAgent');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 
 // ── REST API ──
 router.get('/stats',          ctrl.getStats);
@@ -17,6 +20,7 @@ router.delete('/:id',         ctrl.archiveLead);
 router.get('/:id/messages',   ctrl.getMessages);
 router.post('/:id/messages',  ctrl.addMessage);
 router.post('/:id/send-message',  ctrl.sendHumanMessage);
+router.post('/:id/send-media',    upload.single('file'), ctrl.sendMediaMessage);
 router.patch('/:id/stage',        ctrl.updateStage);
 router.post('/:id/reactivate',    ctrl.reactivateLead);
 
