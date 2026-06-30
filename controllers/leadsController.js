@@ -7,14 +7,14 @@ const anthropic = new Anthropic();
 async function getLeads(req, res) {
   try {
     const { status, type, channel } = req.query;
-    const conditions = [];
+    const conditions = ['(archived IS NOT TRUE)'];
     const params = [];
 
     if (status)  { conditions.push(`status = $${params.push(status)}`); }
     if (type)    { conditions.push(`type = $${params.push(type)}`); }
     if (channel) { conditions.push(`channel = $${params.push(channel)}`); }
 
-    const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+    const where = ' WHERE ' + conditions.join(' AND ');
     const { rows } = await pool.query(`SELECT * FROM leads${where} ORDER BY created_at DESC`, params);
     res.json(rows.map(parseLead));
   } catch (err) {
@@ -61,7 +61,8 @@ async function updateLead(req, res) {
 
     const allowed = ['name', 'email', 'type', 'status', 'zone', 'budget', 'bedrooms',
       'timeline', 'financing', 'urgency', 'source', 'owner', 'tags', 'notes', 'ai_active',
-      'pipeline', 'stage', 'last_activity_at', 'nurturing', 'appointment_at', 'appointment_no_show'];
+      'pipeline', 'stage', 'last_activity_at', 'nurturing', 'appointment_at', 'appointment_no_show',
+      'property_interest', 'budget_estimate', 'next_action'];
 
     const setClauses = [];
     const params = [];
@@ -251,12 +252,27 @@ async function getStats(req, res) {
   }
 }
 
+// DELETE /api/leads/:id — archiva (no borra físicamente)
+async function archiveLead(req, res) {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE leads SET archived = true, updated_at = NOW() WHERE id = $1 RETURNING id`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Lead not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 function parseLead(lead) {
   return {
     ...lead,
     tags: JSON.parse(lead.tags || '[]'),
     ai_active: Boolean(lead.ai_active),
     nurturing: Boolean(lead.nurturing),
+    archived: Boolean(lead.archived),
     appointment_no_show: Boolean(lead.appointment_no_show),
     pipeline: lead.pipeline || 'agent',
     stage: lead.stage || 'new',
@@ -265,5 +281,5 @@ function parseLead(lead) {
 
 module.exports = {
   getLeads, getLeadById, createLead, updateLead, getMessages, addMessage,
-  getStats, sendHumanMessage, getNurturing, updateStage, reactivateLead,
+  getStats, sendHumanMessage, getNurturing, updateStage, reactivateLead, archiveLead,
 };

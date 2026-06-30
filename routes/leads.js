@@ -13,6 +13,7 @@ router.get('/',               ctrl.getLeads);
 router.get('/:id',            ctrl.getLeadById);
 router.post('/',              ctrl.createLead);
 router.patch('/:id',          ctrl.updateLead);
+router.delete('/:id',         ctrl.archiveLead);
 router.get('/:id/messages',   ctrl.getMessages);
 router.post('/:id/messages',  ctrl.addMessage);
 router.post('/:id/send-message',  ctrl.sendHumanMessage);

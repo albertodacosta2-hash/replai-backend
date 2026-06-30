@@ -38,6 +38,10 @@ async function initDb() {
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS nurturing BOOLEAN DEFAULT false;
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS appointment_at TIMESTAMPTZ;
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS appointment_no_show BOOLEAN DEFAULT false;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS property_interest VARCHAR(255);
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS budget_estimate VARCHAR(100);
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS next_action VARCHAR(255);
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS messages (
       id          SERIAL PRIMARY KEY,
