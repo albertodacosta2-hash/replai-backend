@@ -9,7 +9,7 @@ const sessions = new Map();
 
 function getSession(phone) {
   if (!sessions.has(phone)) {
-    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null, followUpSent: false, notifiedAt: null });
+    sessions.set(phone, { messages: [], leadNotified: false, lastLead: null, followUpCount: 0, notifiedAt: null });
   }
   return sessions.get(phone);
 }
@@ -21,9 +21,21 @@ function clearSession(phone) {
   console.log(`[alexAgent] sesión en memoria limpiada → ${phone}`);
 }
 
-// ── Follow-up automático (20 min sin respuesta → 1 mensaje) ──
+// ── Follow-up automático (3 mensajes cada 5 min sin respuesta) ──
 const followUpTimers = {};
-const FOLLOW_UP_MS = 20 * 60 * 1000;
+const FOLLOW_UP_MS = 5 * 60 * 1000; // 5 min — cambiar a 20*60*1000 en producción
+
+const FOLLOWUP_CON_EQUIPO = [
+  (equipo) => `Hola, ¿alguna duda sobre ${equipo}? Estoy aquí para ayudarte 😊`,
+  (equipo) => `¿Sigues interesado en la ${equipo}? Tenemos disponibilidad esta semana 🚜`,
+  ()       => `Última consulta, ¿quieres que te aparte el equipo o prefieres que te contacte más adelante? 🙌`,
+];
+
+const FOLLOWUP_SIN_EQUIPO = [
+  () => 'Hola, ¿sigues ahí? Cualquier máquina que necesites para tu obra, dime y te ayudo 💪',
+  () => '¿Te puedo ayudar con algún equipo? Tenemos retroexcavadoras, excavadoras, bulldozers y más 🚜',
+  () => 'No quiero ser pesado, si necesitas maquinaria en algún momento aquí estoy 🙌',
+];
 
 function cancelFollowUp(phone) {
   if (followUpTimers[phone]) {
@@ -34,17 +46,18 @@ function cancelFollowUp(phone) {
 
 function scheduleFollowUp(phone, session, leadId) {
   cancelFollowUp(phone);
-  if (session.followUpSent || session.leadNotified) return;
+  if (session.leadNotified || session.followUpCount >= 3) return;
 
   followUpTimers[phone] = setTimeout(async () => {
     delete followUpTimers[phone];
-    if (session.followUpSent || session.leadNotified) return;
-    session.followUpSent = true;
+    if (session.leadNotified || session.followUpCount >= 3) return;
 
     const equipo = session.lastLead?.equipo;
+    const idx = session.followUpCount;
     const msg = equipo
-      ? `Hola, ¿te quedó alguna duda sobre ${equipo}? 😊`
-      : 'Hola, ¿pudiste ver mi mensaje? 😊 Cualquier pregunta sobre la maquinaria estoy aquí para ayudarte';
+      ? FOLLOWUP_CON_EQUIPO[idx](equipo)
+      : FOLLOWUP_SIN_EQUIPO[idx]();
+    session.followUpCount += 1;
 
     try {
       await sendWhatsAppMeta(phone, msg);
@@ -53,10 +66,12 @@ function scheduleFollowUp(phone, session, leadId) {
         [leadId, msg]
       );
       session.messages.push({ role: 'assistant', content: msg });
-      console.log(`[alexAgent] follow-up enviado → ${phone}`);
+      console.log(`[alexAgent] follow-up ${session.followUpCount}/3 enviado → ${phone}`);
     } catch (err) {
       console.error('[alexAgent] follow-up send error:', err.message);
     }
+
+    scheduleFollowUp(phone, session, leadId);
   }, FOLLOW_UP_MS);
 }
 
