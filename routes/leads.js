@@ -12,26 +12,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 
 // ── REST API ──
 router.get('/stats',          ctrl.getStats);
 router.get('/nurturing',      ctrl.getNurturing);
-router.get('/media/:mediaId', async (req, res) => {
-  try {
-    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${req.params.mediaId}`, {
-      headers: { Authorization: `Bearer ${process.env.META_TOKEN}` },
-    });
-    if (!metaRes.ok) throw new Error(`Meta metadata error: ${await metaRes.text()}`);
-    const { url } = await metaRes.json();
-
-    const fileRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${process.env.META_TOKEN}` },
-    });
-    if (!fileRes.ok) throw new Error('Meta media download error');
-
-    res.setHeader('Content-Type', fileRes.headers.get('content-type') || 'application/octet-stream');
-    const buf = await fileRes.arrayBuffer();
-    res.send(Buffer.from(buf));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 router.get('/',               ctrl.getLeads);
 router.get('/:id',            ctrl.getLeadById);
 router.post('/',              ctrl.createLead);

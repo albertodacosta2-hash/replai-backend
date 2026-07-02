@@ -10,8 +10,15 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-app.use('/api/leads', require('./routes/leads'));
-app.use('/webhook',   require('./routes/webhook'));
+const requireAuth = require('./middleware/requireAuth');
+
+// Rutas públicas (sin auth)
+app.use('/api/auth',        require('./routes/auth'));
+app.use('/api/leads/media', require('./routes/media')); // proxy media: lo consume el navegador
+app.use('/webhook',         require('./routes/webhook')); // lo llama Meta
+
+// Rutas protegidas (requieren JWT)
+app.use('/api/leads', requireAuth, require('./routes/leads'));
 
 app.get('/health', (_req, res) => res.json({ ok: true, agent: process.env.AGENT_NAME }));
 
