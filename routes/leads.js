@@ -5,7 +5,6 @@ const twilio = require('twilio');
 const { pool } = require('../db');
 const ctrl = require('../controllers/leadsController');
 const { handleMessage } = require('../src/agent');
-const { clearSession } = require('../src/alexAgent');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 
@@ -23,12 +22,6 @@ router.post('/:id/send-message',  ctrl.sendHumanMessage);
 router.post('/:id/send-media',    upload.single('file'), ctrl.sendMediaMessage);
 router.patch('/:id/stage',        ctrl.updateStage);
 router.post('/:id/reactivate',    ctrl.reactivateLead);
-
-// ── Session reset (para tests) ──
-router.get('/reset-session/:phone', (req, res) => {
-  clearSession(decodeURIComponent(req.params.phone));
-  res.json({ ok: true });
-});
 
 // ── Twilio WhatsApp Webhook ──
 router.post('/webhook/twilio', async (req, res) => {
