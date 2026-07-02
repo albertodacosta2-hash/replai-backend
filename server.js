@@ -2,7 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { initDb } = require('./db');
-const { runNurturingCheck } = require('./src/nurturingJob');
+const { runNurturingCheck }  = require('./src/nurturingJob');
+const { runEmailSequences }  = require('./src/emailSequenceJob');
 
 const app = express();
 
@@ -19,7 +20,9 @@ app.use('/api/leads/reset-session',  require('./routes/resetSession')); // utili
 app.use('/webhook',                  require('./routes/webhook'));      // lo llama Meta
 
 // Rutas protegidas (requieren JWT)
-app.use('/api/leads', requireAuth, require('./routes/leads'));
+app.use('/api/leads',      requireAuth, require('./routes/leads'));
+app.use('/api/templates',  requireAuth, require('./routes/templates'));
+app.use('/api/sequences',  requireAuth, require('./routes/sequences'));
 
 app.get('/health', (_req, res) => res.json({ ok: true, agent: process.env.AGENT_NAME }));
 
@@ -30,5 +33,7 @@ initDb()
     app.listen(PORT, () => console.log(`Replai backend running on http://localhost:${PORT}`));
     runNurturingCheck();
     setInterval(runNurturingCheck, 60 * 60 * 1000);
+    runEmailSequences();
+    setInterval(runEmailSequences, 60 * 60 * 1000);
   })
   .catch(err => { console.error('DB init failed:', err.message); process.exit(1); });

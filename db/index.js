@@ -51,6 +51,41 @@ async function initDb() {
       body        TEXT NOT NULL,
       created_at  TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id         SERIAL PRIMARY KEY,
+      name       VARCHAR(255) NOT NULL,
+      subject    VARCHAR(255) NOT NULL,
+      html       TEXT NOT NULL,
+      type       VARCHAR(50) DEFAULT 'custom',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS email_sequences (
+      id         SERIAL PRIMARY KEY,
+      name       VARCHAR(255) NOT NULL,
+      list_type  VARCHAR(50) NOT NULL,
+      active     BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS email_sequence_steps (
+      id          SERIAL PRIMARY KEY,
+      sequence_id INTEGER REFERENCES email_sequences(id) ON DELETE CASCADE,
+      template_id INTEGER REFERENCES email_templates(id),
+      delay_days  INTEGER NOT NULL DEFAULT 0,
+      step_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS email_sequence_log (
+      id          SERIAL PRIMARY KEY,
+      lead_id     INTEGER REFERENCES leads(id),
+      sequence_id INTEGER REFERENCES email_sequences(id),
+      step_id     INTEGER REFERENCES email_sequence_steps(id),
+      sent_at     TIMESTAMPTZ DEFAULT NOW(),
+      status      VARCHAR(50) DEFAULT 'sent'
+    );
   `);
 }
 
