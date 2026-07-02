@@ -40,6 +40,15 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    const { rows } = await pool.query(
+      'SELECT COUNT(*) FROM email_sequence_steps WHERE template_id = $1',
+      [req.params.id]
+    );
+    if (parseInt(rows[0].count) > 0) {
+      return res.status(409).json({
+        error: 'No se puede eliminar esta plantilla porque está siendo usada en una o más secuencias. Elimínala de las secuencias primero.'
+      });
+    }
     await pool.query('DELETE FROM email_templates WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
