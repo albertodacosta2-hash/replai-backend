@@ -440,7 +440,7 @@ async function handleIncoming(phone, userMessage) {
     reply = response.content[0]?.text || reply;
     console.log(`[ALEX_RESPONSE:${phone}] ${reply}`);
   } catch (err) {
-    console.error('[alexAgent] Claude error:', err.message);
+    console.error('[alexAgent] Claude error — status:', err.status, '| type:', err.error?.type, '| msg:', err.message);
   }
 
   session.messages.push({ role: 'assistant', content: reply });
