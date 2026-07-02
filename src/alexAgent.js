@@ -428,19 +428,23 @@ async function handleIncoming(phone, userMessage) {
     [leadId]
   );
 
-  // Llamar a Claude
+  // Llamar a Claude (con retry ante errores de red transientes)
   let reply = 'Un momento, déjame verificar eso para ti 😊';
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 512,
-      system: getSystemPrompt(),
-      messages: session.messages,
-    });
-    reply = response.content[0]?.text || reply;
-    console.log(`[ALEX_RESPONSE:${phone}] ${reply}`);
-  } catch (err) {
-    console.error('[alexAgent] Claude error — status:', err.status, '| type:', err.error?.type, '| msg:', err.message);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 512,
+        system: getSystemPrompt(),
+        messages: session.messages,
+      });
+      reply = response.content[0]?.text || reply;
+      console.log(`[ALEX_RESPONSE:${phone}] ${reply}`);
+      break;
+    } catch (err) {
+      console.error(`[alexAgent] Claude error (intento ${attempt}/3) — status:`, err.status, '| type:', err.error?.type, '| msg:', err.message);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
   }
 
   session.messages.push({ role: 'assistant', content: reply });
