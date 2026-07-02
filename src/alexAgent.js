@@ -2,7 +2,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { pool } = require('../db');
 const { sendWhatsAppMeta } = require('./metaSender');
 
-const client = new Anthropic();
+// Use native fetch instead of the SDK's bundled node-fetch+agentkeepalive
+// to avoid "Premature close" on Railway where idle TCP connections are silently dropped.
+const client = new Anthropic({ fetch: (...args) => globalThis.fetch(...args) });
 
 // ── Sesiones en memoria (historial + estado de notificación) ──
 const sessions = new Map();
