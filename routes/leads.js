@@ -5,6 +5,7 @@ const twilio = require('twilio');
 const { pool } = require('../db');
 const ctrl = require('../controllers/leadsController');
 const { handleMessage } = require('../src/agent');
+const { sendCampaignEmail } = require('../src/emailSender');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 
@@ -22,6 +23,24 @@ router.post('/:id/send-message',  ctrl.sendHumanMessage);
 router.post('/:id/send-media',    upload.single('file'), ctrl.sendMediaMessage);
 router.patch('/:id/stage',        ctrl.updateStage);
 router.post('/:id/reactivate',    ctrl.reactivateLead);
+
+// ── Email campaigns (Resend) ──
+router.post('/send-campaign', async (req, res) => {
+  const { leadIds, subject, html } = req.body || {};
+  if (!Array.isArray(leadIds) || !leadIds.length || !subject || !html) {
+    return res.status(400).json({ error: 'leadIds, subject y html son requeridos' });
+  }
+  const { rows } = await pool.query(
+    `SELECT id, email FROM leads WHERE id = ANY($1::int[]) AND email IS NOT NULL AND email <> ''`,
+    [leadIds]
+  );
+  let sent = 0, skipped = leadIds.length - rows.length;
+  for (const lead of rows) {
+    const result = await sendCampaignEmail(lead.email, subject, html);
+    result.ok ? sent++ : skipped++;
+  }
+  res.json({ sent, skipped });
+});
 
 // ── Twilio WhatsApp Webhook ──
 router.post('/webhook/twilio', async (req, res) => {
