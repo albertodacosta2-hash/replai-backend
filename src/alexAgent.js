@@ -44,15 +44,40 @@ function cancelFollowUp(phone) {
     clearTimeout(followUpTimers[phone]);
     delete followUpTimers[phone];
   }
+  pool.query(
+    `UPDATE leads SET follow_up_at = NULL, updated_at = NOW() WHERE phone = $1 AND follow_up_at IS NOT NULL`,
+    [phone]
+  ).catch(err => console.error('[alexAgent] cancelFollowUp DB:', err.message));
 }
 
 function scheduleFollowUp(phone, session, leadId) {
   cancelFollowUp(phone);
   if (session.leadNotified || session.followUpCount >= 3) return;
 
+  const FOLLOW_UP_SECS = Math.round(FOLLOW_UP_MS / 1000);
+  pool.query(
+    `UPDATE leads SET follow_up_at = NOW() + INTERVAL '${FOLLOW_UP_SECS} seconds', updated_at = NOW() WHERE id = $1`,
+    [leadId]
+  ).catch(err => console.error('[alexAgent] schedule follow_up_at:', err.message));
+  console.log(`[alexAgent] follow-up programado en ${FOLLOW_UP_MS / 60000} min → ${phone}`);
+
   followUpTimers[phone] = setTimeout(async () => {
     delete followUpTimers[phone];
     if (session.leadNotified || session.followUpCount >= 3) return;
+
+    // Claim atómico: previene doble-envío si followUpJob también dispara
+    let claimed = false;
+    try {
+      const { rowCount } = await pool.query(
+        `UPDATE leads SET follow_up_at = NULL, updated_at = NOW() WHERE id = $1 AND follow_up_at IS NOT NULL`,
+        [leadId]
+      );
+      claimed = rowCount > 0;
+    } catch (err) {
+      console.error('[alexAgent] claim follow_up_at error:', err.message);
+      return;
+    }
+    if (!claimed) return; // followUpJob ya lo reclamó
 
     const equipo = session.lastLead?.equipo;
     const idx = session.followUpCount;
@@ -66,6 +91,10 @@ function scheduleFollowUp(phone, session, leadId) {
       await pool.query(
         `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
         [leadId, msg]
+      );
+      await pool.query(
+        `UPDATE leads SET follow_up_count = $1, updated_at = NOW() WHERE id = $2`,
+        [session.followUpCount, leadId]
       );
       session.messages.push({ role: 'assistant', content: msg });
       console.log(`[alexAgent] follow-up ${session.followUpCount}/3 enviado → ${phone}`);
@@ -356,7 +385,7 @@ async function handleIncoming(phone, userMessage) {
 
   // Upsert lead en PostgreSQL
   const existing = await pool.query(
-    'SELECT id, lead_notified, name, last_lead_data, ai_active, nurturing FROM leads WHERE phone = $1',
+    'SELECT id, lead_notified, name, last_lead_data, ai_active, nurturing, follow_up_count FROM leads WHERE phone = $1',
     [phone]
   );
   if (existing.rows[0]?.ai_active === 0) {
@@ -398,6 +427,7 @@ async function handleIncoming(phone, userMessage) {
     // después de haber sido calificado, no asumimos que es el mismo pedido.
     // hasLeadChanged no puede disparar hasta que dé info nueva en esta sesión.
     const dbRow = existing.rows[0];
+    session.followUpCount = dbRow?.follow_up_count ?? 0;
     if (dbRow?.lead_notified) {
       session.leadNotified = true;
       session.lastLead = null;
@@ -570,4 +600,6 @@ async function _processNext(phone, batch) {
   }
 }
 
-module.exports = { enqueue, clearSession };
+function hasFollowUpTimer(phone) { return !!followUpTimers[phone]; }
+
+module.exports = { enqueue, clearSession, hasFollowUpTimer, sessions };

@@ -4,6 +4,7 @@ const cors = require('cors');
 const { initDb } = require('./db');
 const { runNurturingCheck }  = require('./src/nurturingJob');
 const { runEmailSequences }  = require('./src/emailSequenceJob');
+const { runFollowUpJob }     = require('./src/followUpJob');
 
 const app = express();
 
@@ -35,5 +36,7 @@ initDb()
     setInterval(runNurturingCheck, 60 * 60 * 1000);
     runEmailSequences();
     setInterval(runEmailSequences, 60 * 60 * 1000);
+    runFollowUpJob();
+    setInterval(runFollowUpJob, 2 * 60 * 1000);
   })
   .catch(err => { console.error('DB init failed:', err.message); process.exit(1); });
