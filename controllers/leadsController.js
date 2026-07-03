@@ -288,27 +288,105 @@ Sin markdown, sin listas, tono cálido. Termina con una pregunta breve.`;
   }
 }
 
-// GET /api/leads/stats
+// GET /api/leads/stats?period=today|week|month
+// Boundaries SQL por periodo — 'period' se valida contra este whitelist antes de interpolar.
+const PERIOD_BOUNDS = {
+  today: {
+    start:     "CURRENT_DATE",
+    prevStart: "CURRENT_DATE - INTERVAL '1 day'",
+    prevEnd:   "CURRENT_DATE",
+  },
+  week: {
+    start:     "DATE_TRUNC('week', NOW())",
+    prevStart: "DATE_TRUNC('week', NOW()) - INTERVAL '1 week'",
+    prevEnd:   "DATE_TRUNC('week', NOW())",
+  },
+  month: {
+    start:     "DATE_TRUNC('month', NOW())",
+    prevStart: "DATE_TRUNC('month', NOW()) - INTERVAL '1 month'",
+    prevEnd:   "DATE_TRUNC('month', NOW())",
+  },
+};
+
 async function getStats(req, res) {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const period = PERIOD_BOUNDS[req.query.period] ? req.query.period : 'month';
+    const { start, prevStart, prevEnd } = PERIOD_BOUNDS[period];
 
-    const [newToday, qualified, active, appointments, followUp, closed] = await Promise.all([
-      pool.query('SELECT COUNT(*) AS n FROM leads WHERE created_at::date = $1', [today]),
-      pool.query("SELECT COUNT(*) AS n FROM leads WHERE status = 'Qualified'"),
-      pool.query("SELECT COUNT(*) AS n FROM leads WHERE status NOT IN ('Closed','Lost')"),
-      pool.query("SELECT COUNT(*) AS n FROM leads WHERE status = 'Appointment Scheduled'"),
-      pool.query("SELECT COUNT(*) AS n FROM leads WHERE status = 'Follow-up Needed'"),
-      pool.query("SELECT COUNT(*) AS n FROM leads WHERE status = 'Closed'"),
+    const num = r => parseInt(r.rows[0].n) || 0;
+    const flt = r => parseFloat(r.rows[0].m) || 0;
+
+    // Conteo de leads por status dentro de una ventana [desde, hasta)
+    const leadCount = (statusClause, from, to) =>
+      pool.query(
+        `SELECT COUNT(*) AS n FROM leads
+         WHERE archived = false ${statusClause}
+           AND created_at >= ${from}${to ? ` AND created_at < ${to}` : ''}`
+      );
+
+    // Promedio en minutos entre un inbound y el outbound siguiente del mismo lead
+    const avgResponse = (from, to) =>
+      pool.query(
+        `WITH o AS (
+           SELECT lead_id, direction, created_at,
+                  LAG(created_at) OVER (PARTITION BY lead_id ORDER BY created_at) AS prev_at,
+                  LAG(direction)  OVER (PARTITION BY lead_id ORDER BY created_at) AS prev_dir
+           FROM messages)
+         SELECT AVG(EXTRACT(EPOCH FROM (created_at - prev_at)) / 60) AS m
+         FROM o
+         WHERE direction = 'outbound' AND prev_dir = 'inbound'
+           AND created_at >= ${from}${to ? ` AND created_at < ${to}` : ''}`
+      );
+
+    const [
+      leadsNew, leadsNewPrev,
+      qualified, qualifiedPrev,
+      appointments, appointmentsPrev,
+      avgResp, avgRespPrev,
+      aiResponses, activeLeads, nurturing, messagesSent,
+    ] = await Promise.all([
+      leadCount('', start),
+      leadCount('', prevStart, prevEnd),
+      leadCount("AND status = 'Qualified'", start),
+      leadCount("AND status = 'Qualified'", prevStart, prevEnd),
+      leadCount("AND status = 'Appointment Scheduled'", start),
+      leadCount("AND status = 'Appointment Scheduled'", prevStart, prevEnd),
+      avgResponse(start),
+      avgResponse(prevStart, prevEnd),
+      pool.query(
+        `SELECT COUNT(DISTINCT lead_id) AS n FROM messages
+         WHERE direction = 'outbound' AND sender = 'ai_agent' AND created_at >= ${start}`
+      ),
+      leadCount("AND status NOT IN ('Closed','Lost')", start),
+      pool.query("SELECT COUNT(*) AS n FROM leads WHERE nurturing = true AND archived = false"),
+      pool.query(
+        `SELECT COUNT(*) AS n FROM messages
+         WHERE direction = 'outbound' AND sender = 'ai_agent' AND created_at >= ${start}`
+      ),
     ]);
 
+    const leadsNewN   = num(leadsNew);
+    const qualifiedN  = num(qualified);
+    const avgRespN    = flt(avgResp);
+
     res.json({
-      new_today:     parseInt(newToday.rows[0].n),
-      qualified:     parseInt(qualified.rows[0].n),
-      active_convos: parseInt(active.rows[0].n),
-      appointments:  parseInt(appointments.rows[0].n),
-      follow_up:     parseInt(followUp.rows[0].n),
-      closed:        parseInt(closed.rows[0].n),
+      period,
+      // Primarias + delta vs periodo anterior
+      leads_new:           leadsNewN,
+      leads_new_delta:     leadsNewN - num(leadsNewPrev),
+      qualified:           qualifiedN,
+      qualified_delta:     qualifiedN - num(qualifiedPrev),
+      appointments:        num(appointments),
+      appointments_delta:  num(appointments) - num(appointmentsPrev),
+      avg_response_min:    Math.round(avgRespN * 10) / 10,
+      avg_response_delta:  Math.round((avgRespN - flt(avgRespPrev)) * 10) / 10,
+      // Banner estrella
+      ai_responses:        num(aiResponses),
+      // Secundarias
+      active_leads:        num(activeLeads),
+      nurturing_count:     num(nurturing),
+      messages_sent:       num(messagesSent),
+      qualification_rate:  leadsNewN ? Math.round((qualifiedN / leadsNewN) * 100) : 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
