@@ -1,9 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', [
+  body('username').trim().notEmpty().escape(),
+  body('password').notEmpty(),
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'Datos inválidos' });
+
   const { username, password } = req.body || {};
 
   if (username === process.env.DASHBOARD_USER && password === process.env.DASHBOARD_PASSWORD) {

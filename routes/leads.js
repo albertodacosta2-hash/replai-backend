@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const twilio = require('twilio');
+const { body, validationResult } = require('express-validator');
 const { pool } = require('../db');
 const ctrl = require('../controllers/leadsController');
 const { handleMessage } = require('../src/agent');
@@ -9,12 +10,22 @@ const { sendCampaignEmail } = require('../src/emailSender');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 
+// Middleware: corta la petición si la validación falla
+function checkValidation(req, res, next) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'Datos inválidos' });
+  next();
+}
+
 // ── REST API ──
 router.get('/stats',          ctrl.getStats);
 router.get('/nurturing',      ctrl.getNurturing);
 router.get('/',               ctrl.getLeads);
 router.get('/:id',            ctrl.getLeadById);
-router.post('/',              ctrl.createLead);
+router.post('/', [
+  body('phone').trim().notEmpty(),
+  body('email').optional({ checkFalsy: true }).isEmail(),
+], checkValidation,           ctrl.createLead);
 router.patch('/:id',          ctrl.updateLead);
 router.delete('/:id',         ctrl.archiveLead);
 router.get('/:id/messages',   ctrl.getMessages);

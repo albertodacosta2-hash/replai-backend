@@ -1,16 +1,75 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { initDb } = require('./db');
 const { runNurturingCheck }  = require('./src/nurturingJob');
 const { runEmailSequences }  = require('./src/emailSequenceJob');
 const { runFollowUpJob }     = require('./src/followUpJob');
 
+// ── Variables de entorno críticas: abortar si falta alguna ──
+const required = ['DATABASE_URL', 'ANTHROPIC_API_KEY', 'META_TOKEN', 'JWT_SECRET'];
+required.forEach(v => {
+  if (!process.env[v]) {
+    console.error(`ERROR: Variable ${v} no definida`);
+    process.exit(1);
+  }
+});
+
 const app = express();
 
-app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Railway/Vercel corren detrás de un proxy — necesario para que el rate limit lea la IP real
+app.set('trust proxy', 1);
+
+// ── Security headers (Helmet) ──
+app.use(helmet({
+  contentSecurityPolicy: false,      // el frontend vive en Vercel; no servimos HTML aquí
+  crossOriginEmbedderPolicy: false,
+}));
+
+// ── CORS ──
+// El webhook de Meta debe aceptar cualquier origen (se aplica antes del CORS general)
+app.use('/webhook', cors({ origin: '*' }));
+
+const allowedOrigins = [
+  'https://replai-theta.vercel.app',
+  'https://replai.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
+  credentials: true,
+}));
+
+// ── Límite de tamaño de payload ──
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ── Rate limiting ──
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes, intenta más tarde' },
+});
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de login' },
+});
+app.use('/api/', apiLimiter);
+app.use('/api/auth/login', loginLimiter);
 
 const requireAuth = require('./middleware/requireAuth');
 
