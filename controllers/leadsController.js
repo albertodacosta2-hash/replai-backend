@@ -352,14 +352,15 @@ async function getStats(req, res) {
       qualified, qualifiedPrev,
       appointments, appointmentsPrev,
       avgResp, avgRespPrev,
-      aiResponses, activeLeads, nurturing, messagesSent,
+      aiResponses, activeLeads, nurturing, messagesSent, followUps,
     ] = await Promise.all([
       leadCount('', start),
       leadCount('', prevStart, prevEnd),
       leadCount("AND status = 'Qualified'", start),
       leadCount("AND status = 'Qualified'", prevStart, prevEnd),
-      leadCount("AND status = 'Appointment Scheduled'", start),
-      leadCount("AND status = 'Appointment Scheduled'", prevStart, prevEnd),
+      // Las citas se guardan como stage = 'appointment' (no como status), por eso se cuenta por stage
+      leadCount("AND stage = 'appointment'", start),
+      leadCount("AND stage = 'appointment'", prevStart, prevEnd),
       avgResponse(start),
       avgResponse(prevStart, prevEnd),
       pool.query(
@@ -371,6 +372,14 @@ async function getStats(req, res) {
       pool.query(
         `SELECT COUNT(*) AS n FROM messages
          WHERE direction = 'outbound' AND sender = 'ai_agent' AND created_at >= ${start}`
+      ),
+      // Follow-ups enviados: mensajes del agente que coinciden con los 6 templates de followUpJob
+      pool.query(
+        `SELECT COUNT(*) AS n FROM messages
+         WHERE direction = 'outbound' AND sender = 'ai_agent' AND created_at >= ${start}
+           AND (body ILIKE '%alguna duda sobre%' OR body ILIKE '%disponibilidad esta semana%'
+             OR body ILIKE '%última consulta%'   OR body ILIKE '%sigues ah_%'
+             OR body ILIKE '%ayudar con algún equipo%' OR body ILIKE '%no quiero ser pesado%')`
       ),
     ]);
 
@@ -395,6 +404,7 @@ async function getStats(req, res) {
       active_leads:        num(activeLeads),
       nurturing_count:     num(nurturing),
       messages_sent:       num(messagesSent),
+      follow_ups_sent:     num(followUps),
       qualification_rate:  leadsNewN ? Math.round((qualifiedN / leadsNewN) * 100) : 0,
     });
   } catch (err) {
