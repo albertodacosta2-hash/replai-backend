@@ -227,6 +227,15 @@ async function updateStage(req, res) {
     const { pipeline, stage } = req.body;
     if (!pipeline || !stage) return res.status(400).json({ error: 'pipeline and stage required' });
 
+    // Única validación: que el stage sea uno válido. NO se valida dirección —
+    // se permite mover el lead a cualquier stage, hacia adelante o hacia atrás.
+    const validAgentStages = ['new', 'replied', 'profiled', 'appointment'];
+    const validRealtorStages = ['call', 'visit', 'post_visit', 'offer', 'closed'];
+    const allValidStages = [...validAgentStages, ...validRealtorStages];
+    if (!allValidStages.includes(stage)) {
+      return res.status(400).json({ error: 'Stage inválido' });
+    }
+
     const { rows } = await pool.query(
       `UPDATE leads SET pipeline = $1, stage = $2, last_activity_at = NOW(), updated_at = NOW()
        WHERE id = $3 RETURNING *`,

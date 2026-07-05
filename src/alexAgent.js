@@ -496,11 +496,22 @@ async function handleIncoming(phone, userMessage) {
   console.log(`[alexAgent] isClosingPhrase=${isClosingPhrase}`);
   if (isClosingPhrase) {
     try {
-      await pool.query(
-        `UPDATE leads SET stage = 'appointment', updated_at = NOW() WHERE id = $1`,
-        [leadId]
-      );
-      console.log('[alexAgent] stage → appointment para lead', leadId);
+      // Solo avanzar el stage automáticamente: nunca sobrescribir un stage que el
+      // realtor movió manualmente hacia atrás (p.ej. de 'appointment' a 'replied').
+      const stageOrder = ['new', 'replied', 'profiled', 'appointment'];
+      const { rows: cur } = await pool.query('SELECT stage FROM leads WHERE id = $1', [leadId]);
+      const currentStage = cur[0]?.stage || 'new';
+      const currentIndex = stageOrder.indexOf(currentStage);
+      // currentIndex === -1 → stage de otro pipeline (realtor): no tocar
+      if (currentIndex !== -1 && stageOrder.indexOf('appointment') > currentIndex) {
+        await pool.query(
+          `UPDATE leads SET stage = 'appointment', updated_at = NOW() WHERE id = $1`,
+          [leadId]
+        );
+        console.log('[alexAgent] stage → appointment para lead', leadId);
+      } else {
+        console.log(`[alexAgent] stage NO cambiado (actual '${currentStage}' >= appointment) para lead`, leadId);
+      }
     } catch (err) {
       console.error('[alexAgent] ERROR actualizando stage appointment:', err.message);
     }
