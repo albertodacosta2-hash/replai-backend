@@ -27,6 +27,7 @@ router.post('/', [
   body('email').optional({ checkFalsy: true }).isEmail(),
 ], checkValidation,           ctrl.createLead);
 router.patch('/:id',          ctrl.updateLead);
+router.post('/:id/notes',     ctrl.appendNote);
 router.delete('/:id',         ctrl.archiveLead);
 router.get('/:id/messages',   ctrl.getMessages);
 router.post('/:id/messages',  ctrl.addMessage);

@@ -412,6 +412,23 @@ async function getStats(req, res) {
   }
 }
 
+// POST /api/leads/:id/notes — agrega una nota interna con fecha/hora (no reemplaza el historial)
+async function appendNote(req, res) {
+  try {
+    const { text } = req.body || {};
+    if (!text || !text.trim()) return res.status(400).json({ error: 'text requerido' });
+    const { rows } = await pool.query(
+      `UPDATE leads SET notes = COALESCE(notes, '') || '[' || to_char(NOW(), 'YYYY-MM-DD HH24:MI') || '] ' || $1 || E'\n'
+       WHERE id = $2 RETURNING notes`,
+      [text.trim(), req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
+    res.json({ ok: true, notes: rows[0].notes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 // DELETE /api/leads/:id — archiva (no borra físicamente)
 async function archiveLead(req, res) {
   try {
@@ -442,4 +459,5 @@ function parseLead(lead) {
 module.exports = {
   getLeads, getLeadById, createLead, updateLead, getMessages, addMessage,
   getStats, sendHumanMessage, sendMediaMessage, getNurturing, updateStage, reactivateLead, archiveLead,
+  appendNote,
 };
