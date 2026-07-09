@@ -46,6 +46,11 @@ async function runEmailSequences() {
           accumulated += step.delay_days;
           if (daysInactive < accumulated) break;
 
+          // Espera a que la hora del servidor alcance la hora programada del paso
+          // (no hay timezone por lead — se usa la hora local del servidor).
+          const [stepHour] = (step.send_hour || '09:00').split(':').map(Number);
+          if (new Date().getHours() < stepHour) continue;
+
           const { rows: logs } = await pool.query(
             'SELECT id FROM email_sequence_log WHERE lead_id = $1 AND step_id = $2',
             [lead.id, step.id]
