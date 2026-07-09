@@ -91,11 +91,14 @@ async function initDb() {
 
     ALTER TABLE email_sequence_steps ADD COLUMN IF NOT EXISTS send_hour VARCHAR(5) DEFAULT '09:00';
 
-    -- Permite borrar/reemplazar pasos al editar una secuencia sin violar la FK
-    -- cuando el paso eliminado ya tiene historial de envíos.
+    -- Permite borrar/reemplazar pasos al editar una secuencia, o borrar la secuencia
+    -- completa, sin violar la FK cuando ya hay historial de envíos.
     ALTER TABLE email_sequence_log DROP CONSTRAINT IF EXISTS email_sequence_log_step_id_fkey;
     ALTER TABLE email_sequence_log ADD CONSTRAINT email_sequence_log_step_id_fkey
       FOREIGN KEY (step_id) REFERENCES email_sequence_steps(id) ON DELETE CASCADE;
+    ALTER TABLE email_sequence_log DROP CONSTRAINT IF EXISTS email_sequence_log_sequence_id_fkey;
+    ALTER TABLE email_sequence_log ADD CONSTRAINT email_sequence_log_sequence_id_fkey
+      FOREIGN KEY (sequence_id) REFERENCES email_sequences(id) ON DELETE CASCADE;
   `);
 }
 
