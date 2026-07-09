@@ -99,6 +99,14 @@ async function initDb() {
     ALTER TABLE email_sequence_log DROP CONSTRAINT IF EXISTS email_sequence_log_sequence_id_fkey;
     ALTER TABLE email_sequence_log ADD CONSTRAINT email_sequence_log_sequence_id_fkey
       FOREIGN KEY (sequence_id) REFERENCES email_sequences(id) ON DELETE CASCADE;
+
+    -- Guarda el error real de Resend (antes se logueaba por consola y se descartaba).
+    ALTER TABLE email_sequence_log ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+    -- Garantiza a nivel de DB que un mismo paso nunca se registre dos veces para el
+    -- mismo lead, incluso si dos corridas del job llegan a solaparse.
+    ALTER TABLE email_sequence_log DROP CONSTRAINT IF EXISTS email_sequence_log_lead_step_uniq;
+    ALTER TABLE email_sequence_log ADD CONSTRAINT email_sequence_log_lead_step_uniq UNIQUE (lead_id, step_id);
   `);
 }
 

@@ -120,17 +120,19 @@ router.get('/:id/tracking', async (req, res) => {
     );
 
     const { rows: logs } = await pool.query(
-      'SELECT lead_id, step_id, status FROM email_sequence_log WHERE sequence_id = $1',
+      'SELECT lead_id, step_id, status, error_message FROM email_sequence_log WHERE sequence_id = $1',
       [seq.id]
     );
 
     const result = contacts.map(c => {
       const statuses = {};
+      const errors = {};
       for (const step of steps) {
         const log = logs.find(l => l.lead_id === c.lead_id && l.step_id === step.id);
         statuses[step.id] = log ? log.status : 'pending';
+        if (log && log.error_message) errors[step.id] = log.error_message;
       }
-      return { lead_id: c.lead_id, name: c.name, phone: c.phone, statuses };
+      return { lead_id: c.lead_id, name: c.name, phone: c.phone, statuses, errors };
     });
 
     res.json({ steps, contacts: result });

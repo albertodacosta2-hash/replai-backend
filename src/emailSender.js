@@ -10,8 +10,9 @@ async function sendCampaignEmail(to, subject, html) {
     html,
   });
   if (error) {
-    console.error('[emailSender] Error enviando a', to, ':', error.message);
-    return { ok: false, error: error.message };
+    const detail = error.name ? `${error.name}: ${error.message}` : error.message;
+    console.error('[emailSender] Error enviando a', to, ':', detail);
+    return { ok: false, error: detail };
   }
   console.log('[emailSender] Enviado a', to, '| id:', data.id);
   return { ok: true, id: data.id };
