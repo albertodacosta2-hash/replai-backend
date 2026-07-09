@@ -1,6 +1,16 @@
 const { pool } = require('../db');
 const { sendCampaignEmail } = require('./emailSender');
 
+// El negocio opera en Miami — America/New_York ajusta automáticamente entre EST y EDT.
+const SEND_TIMEZONE = 'America/New_York';
+
+function currentHourInTZ(tz) {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', hour: '2-digit' }).format(new Date()),
+    10
+  );
+}
+
 async function runEmailSequences() {
   try {
     const { rows: sequences } = await pool.query(
@@ -46,10 +56,10 @@ async function runEmailSequences() {
           accumulated += step.delay_days;
           if (daysInactive < accumulated) break;
 
-          // Espera a que la hora del servidor alcance la hora programada del paso
-          // (no hay timezone por lead — se usa la hora local del servidor).
+          // Espera a que la hora de Miami (EST/EDT según la época del año) alcance
+          // la hora programada del paso. No hay timezone por lead — se asume Miami para todos.
           const [stepHour] = (step.send_hour || '09:00').split(':').map(Number);
-          if (new Date().getHours() < stepHour) continue;
+          if (currentHourInTZ(SEND_TIMEZONE) < stepHour) continue;
 
           const { rows: logs } = await pool.query(
             'SELECT id FROM email_sequence_log WHERE lead_id = $1 AND step_id = $2',
