@@ -94,7 +94,7 @@ initDb()
     runNurturingCheck();
     setInterval(runNurturingCheck, 60 * 60 * 1000);
     runEmailSequences();
-    setInterval(runEmailSequences, 60 * 60 * 1000);
+    setInterval(runEmailSequences, 2 * 60 * 1000);
     runFollowUpJob();
     setInterval(runFollowUpJob, 2 * 60 * 1000);
   })
