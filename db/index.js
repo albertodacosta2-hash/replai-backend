@@ -107,6 +107,16 @@ async function initDb() {
     -- mismo lead, incluso si dos corridas del job llegan a solaparse.
     ALTER TABLE email_sequence_log DROP CONSTRAINT IF EXISTS email_sequence_log_lead_step_uniq;
     ALTER TABLE email_sequence_log ADD CONSTRAINT email_sequence_log_lead_step_uniq UNIQUE (lead_id, step_id);
+
+    -- Ancla el "día 0" de una secuencia al momento en que el lead entra a ella, no a su
+    -- last_activity_at genérico (que ya puede tener 4+ días por las reglas de nurturingJob,
+    -- lo que hacía que todos los delay_days se vencieran juntos apenas se inscribía el lead).
+    CREATE TABLE IF NOT EXISTS email_sequence_enrollments (
+      lead_id     INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+      sequence_id INTEGER REFERENCES email_sequences(id) ON DELETE CASCADE,
+      enrolled_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (lead_id, sequence_id)
+    );
   `);
 }
 

@@ -65,14 +65,24 @@ async function runEmailSequences() {
         if (seq.list_type === 'qualified' && !isQualified) continue;
         if (seq.list_type === 'cold'      &&  isQualified) continue;
 
-        const daysInactive = Math.floor(
-          (Date.now() - new Date(lead.last_activity_at).getTime()) / 86400000
+        // Ancla el "día 0" al momento en que el lead entra a ESTA secuencia (no a su
+        // last_activity_at genérico, que nurturingJob.js ya deja en 4+ días de por sí —
+        // eso hacía que todos los delay_days tempranos vencieran juntos el primer tick).
+        const { rows: enroll } = await pool.query(
+          `INSERT INTO email_sequence_enrollments (lead_id, sequence_id)
+           VALUES ($1, $2)
+           ON CONFLICT (lead_id, sequence_id) DO UPDATE SET sequence_id = EXCLUDED.sequence_id
+           RETURNING enrolled_at`,
+          [lead.id, seq.id]
+        );
+        const daysSinceEnrollment = Math.floor(
+          (Date.now() - new Date(enroll[0].enrolled_at).getTime()) / 86400000
         );
 
         let accumulated = 0;
         for (const step of seqSteps) {
           accumulated += step.delay_days;
-          if (daysInactive < accumulated) { waitingDay++; break; }
+          if (daysSinceEnrollment < accumulated) { waitingDay++; break; }
 
           // Espera a que la hora de Miami (EST/EDT según la época del año) alcance
           // la hora y el minuto programados del paso — comparación de minutos-desde-
@@ -83,7 +93,7 @@ async function runEmailSequences() {
 
           try {
             const { rows: logs } = await pool.query(
-              'SELECT id FROM email_sequence_log WHERE lead_id = $1 AND step_id = $2',
+              "SELECT id FROM email_sequence_log WHERE lead_id = $1 AND step_id = $2 AND status = 'sent'",
               [lead.id, step.id]
             );
             if (logs.length) { alreadyDone++; continue; }
@@ -98,7 +108,9 @@ async function runEmailSequences() {
             const { rows: inserted } = await pool.query(
               `INSERT INTO email_sequence_log (lead_id, sequence_id, step_id, status, error_message)
                VALUES ($1,$2,$3,$4,$5)
-               ON CONFLICT (lead_id, step_id) DO NOTHING
+               ON CONFLICT (lead_id, step_id) DO UPDATE
+                 SET status = EXCLUDED.status, error_message = EXCLUDED.error_message, sent_at = NOW()
+                 WHERE email_sequence_log.status <> 'sent'
                RETURNING id`,
               [lead.id, seq.id, step.id, result.ok ? 'sent' : 'failed', result.ok ? null : result.error]
             );
