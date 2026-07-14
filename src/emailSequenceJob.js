@@ -1,3 +1,4 @@
+const { DateTime } = require('luxon');
 const { pool } = require('../db');
 const { sendCampaignEmail } = require('./emailSender');
 
@@ -8,12 +9,17 @@ const SEND_TIMEZONE = 'America/New_York';
 let isRunning = false;
 
 function currentMinutesInTZ(tz) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
-  }).formatToParts(new Date());
-  const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
-  const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
-  return h * 60 + m;
+  const now = DateTime.now().setZone(tz);
+  return now.hour * 60 + now.minute;
+}
+
+// Días CALENDARIO en la zona del negocio entre la inscripción y hoy — no bloques de 24h.
+// Un lead inscrito ayer a las 2:33 PM ya está en día 1 desde la medianoche de Miami,
+// así que un paso "Día 1 · 9:00 AM" dispara a las 9, no a las 2:33 PM.
+function calendarDaysBetween(fromDate, tz) {
+  const start = DateTime.fromJSDate(fromDate, { zone: tz }).startOf('day');
+  const today = DateTime.now().setZone(tz).startOf('day');
+  return Math.floor(today.diff(start, 'days').days);
 }
 
 function fmtMinutesOfDay(mins) {
@@ -75,8 +81,8 @@ async function runEmailSequences() {
            RETURNING enrolled_at`,
           [lead.id, seq.id]
         );
-        const daysSinceEnrollment = Math.floor(
-          (Date.now() - new Date(enroll[0].enrolled_at).getTime()) / 86400000
+        const daysSinceEnrollment = calendarDaysBetween(
+          new Date(enroll[0].enrolled_at), SEND_TIMEZONE
         );
 
         let accumulated = 0;
