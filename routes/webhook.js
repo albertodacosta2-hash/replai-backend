@@ -59,6 +59,33 @@ router.get('/ig-status', async (req, res) => {
   }
 });
 
+// GET /webhook/ig-whoami?secret=<META_VERIFY_TOKEN> — confirma a qué cuenta de
+// Instagram pertenece realmente el token (vs. el INSTAGRAM_ACCOUNT_ID guardado),
+// y compara ambos "me" (token) contra el ID explícito.
+router.get('/ig-whoami', async (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  try {
+    const [meResp, idResp] = await Promise.all([
+      fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,name,account_type`, {
+        headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+      }),
+      fetch(`https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}?fields=id,username,name,account_type`, {
+        headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+      }),
+    ]);
+    const me = await meResp.json();
+    const byId = await idResp.json();
+    res.json({
+      envAccountId: process.env.INSTAGRAM_ACCOUNT_ID,
+      tokenBelongsTo: me,
+      fetchByEnvId: byId,
+      match: me?.id === process.env.INSTAGRAM_ACCOUNT_ID,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /webhook/ig-conversations-raw?secret=<META_VERIFY_TOKEN> — devuelve la respuesta
 // CRUDA de GET /conversations, sin parsear, para diagnosticar por qué el fallback
 // no encuentra mensajes (permisos, sintaxis de fields, conversación vacía, etc).
