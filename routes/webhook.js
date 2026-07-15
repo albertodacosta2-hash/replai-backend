@@ -59,6 +59,24 @@ router.get('/ig-status', async (req, res) => {
   }
 });
 
+// GET /webhook/ig-conversations-raw?secret=<META_VERIFY_TOKEN> — devuelve la respuesta
+// CRUDA de GET /conversations, sin parsear, para diagnosticar por qué el fallback
+// no encuentra mensajes (permisos, sintaxis de fields, conversación vacía, etc).
+router.get('/ig-conversations-raw', async (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  try {
+    const fields = req.query.fields || 'id,messages.limit(1){id,from,to,message,created_time}';
+    const url = `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}/conversations?platform=instagram&fields=${encodeURIComponent(fields)}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+    });
+    const data = await resp.json();
+    res.status(resp.status).json({ status: resp.status, data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /webhook/ig-resolve-mid?mid=<mid>&secret=<META_VERIFY_TOKEN> — resuelve un
 // message id contra la Graph API para ver su contenido real (sender, texto). Los
 // eventos 'message_edit' que está mandando Meta no traen sender/texto, solo el mid.
