@@ -24,7 +24,8 @@ router.get('/', (req, res) => {
 router.get('/ig-subscribe', async (req, res) => {
   if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
   try {
-    const url = `https://graph.facebook.com/v19.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps?subscribed_fields=messages`;
+    // graph.instagram.com — el token IGAA es de "Instagram API with Instagram Login".
+    const url = `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps?subscribed_fields=messages`;
     const resp = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
@@ -42,7 +43,7 @@ router.get('/ig-subscribe', async (req, res) => {
 router.get('/ig-status', async (req, res) => {
   if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
   try {
-    const url = `https://graph.facebook.com/v19.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps`;
+    const url = `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
     });

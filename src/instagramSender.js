@@ -1,7 +1,9 @@
-// Envío de mensajes de texto por Instagram DM (Meta Graph API).
-// INSTAGRAM_ACCOUNT_ID e INSTAGRAM_ACCESS_TOKEN ya están configurados en Railway.
+// Envío de mensajes de texto por Instagram DM.
+// El token (prefijo IGAA) es de "Instagram API with Instagram Login" — ese producto
+// usa graph.instagram.com, no graph.facebook.com (que es solo para tokens EAA de
+// Facebook Login for Business). Usar el host equivocado da "Cannot parse access token".
 async function sendInstagramMessage(recipientId, body) {
-  const url = `https://graph.facebook.com/v19.0/${process.env.INSTAGRAM_ACCOUNT_ID}/messages`;
+  const url = `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}/messages`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
