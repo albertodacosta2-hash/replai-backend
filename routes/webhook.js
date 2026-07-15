@@ -32,6 +32,26 @@ router.post('/', async (req, res) => {
   res.sendStatus(200); // ACK inmediato, Meta requiere < 5s
 
   try {
+    // ── Instagram DM (object === 'instagram') ──
+    // Mismo endpoint y verify token que WhatsApp; el payload llega como
+    // entry[].messaging[] con sender.id (IGSID) + message.text.
+    if (req.body?.object === 'instagram') {
+      for (const entry of req.body.entry || []) {
+        for (const event of entry.messaging || []) {
+          const senderId = event.sender?.id;
+          const text = event.message?.text;
+          // Skip echoes (mensajes que envió la propia cuenta) — evita loop infinito
+          if (!senderId || event.message?.is_echo) continue;
+          if (senderId === process.env.INSTAGRAM_ACCOUNT_ID) continue;
+          if (!text) continue; // attachments/reactions/postbacks: solo texto por ahora
+          console.log(`[Instagram] ig:${senderId}: "${text.slice(0, 60)}"`);
+          enqueue('ig:' + senderId, text);
+        }
+      }
+      return;
+    }
+
+    // ── WhatsApp (flujo existente, sin cambios) ──
     const messages = req.body?.entry?.[0]?.changes?.[0]?.value?.messages;
     if (!messages?.length) return; // status updates, read receipts, etc.
 

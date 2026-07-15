@@ -1,6 +1,14 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { pool } = require('../db');
 const { sendWhatsAppMeta } = require('./metaSender');
+const { sendInstagramMessage } = require('./instagramSender');
+
+// ── Ruteo por canal: los leads de Instagram se identifican con 'ig:<sender.id>'
+// en la columna phone; todo el motor (sesiones, colas, follow-ups) usa ese string. ──
+function isInstagram(id) { return typeof id === 'string' && id.startsWith('ig:'); }
+async function sendToLead(id, body) {
+  return isInstagram(id) ? sendInstagramMessage(id.slice(3), body) : sendWhatsAppMeta(id, body);
+}
 
 // Use native fetch instead of the SDK's bundled node-fetch+agentkeepalive
 // to avoid "Premature close" on Railway where idle TCP connections are silently dropped.
@@ -87,7 +95,7 @@ function scheduleFollowUp(phone, session, leadId) {
     session.followUpCount += 1;
 
     try {
-      await sendWhatsAppMeta(phone, msg);
+      await sendToLead(phone, msg);
       await pool.query(
         `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
         [leadId, msg]
@@ -354,7 +362,10 @@ async function notifyBeto(phone, lead, isNew, _inBusinessHours, prevLead = null)
   const notify = process.env.NOTIFY_PHONE;
   if (!notify) return;
 
-  const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+  // Para leads de Instagram no hay teléfono: mostrar el canal + IGSID
+  const contactLine = isInstagram(phone)
+    ? `Instagram: ${phone.slice(3)}`
+    : `Número: ${phone.startsWith('+') ? phone : `+${phone}`}`;
 
   let msg;
   if (isNew) {
@@ -364,14 +375,14 @@ async function notifyBeto(phone, lead, isNew, _inBusinessHours, prevLead = null)
       `Equipo: ${lead.equipo}\n` +
       `Zona: ${lead.zona || 'Por confirmar'}\n` +
       `Días: ${lead.dias || 'Por confirmar'}\n` +
-      `Número: ${formattedPhone}`;
+      contactLine;
   } else {
     msg =
       `🔄 ACTUALIZACIÓN - Zona CAT\n` +
       `Cliente: ${lead.nombre}\n` +
       `Equipo: ${lead.equipo}\n` +
       `Zona: ${lead.zona || 'Por confirmar'}\n` +
-      `Número: ${formattedPhone}`;
+      contactLine;
   }
 
   await sendWhatsAppMeta(notify, msg);
@@ -401,10 +412,13 @@ async function handleIncoming(phone, userMessage) {
   if (existing.rows[0]) {
     leadId = existing.rows[0].id;
   } else {
+    const [channel, source] = isInstagram(phone)
+      ? ['instagram', 'Instagram DM']
+      : ['meta_whatsapp', 'Meta WhatsApp Inbound'];
     const { rows } = await pool.query(
       `INSERT INTO leads (phone, channel, source, status, stage)
-       VALUES ($1, 'meta_whatsapp', 'Meta WhatsApp Inbound', 'New', 'new') RETURNING id`,
-      [phone]
+       VALUES ($1, $2, $3, 'New', 'new') RETURNING id`,
+      [phone, channel, source]
     );
     leadId = rows[0].id;
   }
@@ -517,13 +531,13 @@ async function handleIncoming(phone, userMessage) {
     }
   }
 
-  // Enviar respuesta al cliente
+  // Enviar respuesta al cliente (WhatsApp o Instagram según el identificador)
   try {
-    await sendWhatsAppMeta(phone, reply);
-    console.log('[alexAgent] WhatsApp enviado OK');
+    await sendToLead(phone, reply);
+    console.log(`[alexAgent] ${isInstagram(phone) ? 'Instagram' : 'WhatsApp'} enviado OK`);
     scheduleFollowUp(phone, session, leadId);
   } catch (err) {
-    console.error('[alexAgent] WhatsApp send error:', err.message);
+    console.error(`[alexAgent] ${isInstagram(phone) ? 'Instagram' : 'WhatsApp'} send error:`, err.message);
   }
 
   // Extracción de lead y notificación a Beto
