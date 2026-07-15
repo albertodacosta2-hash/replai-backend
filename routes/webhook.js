@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { enqueue } = require('../src/alexAgent');
 const { pool } = require('../db');
+const { getLatestInstagramMessage } = require('../src/instagramSender');
+
+// Dedupe en memoria de mids de Instagram ya procesados — evita reprocesar el mismo
+// mensaje si Meta manda varios pings de 'message_edit' para el mismo envío.
+const processedIgMids = new Set();
 
 // GET /webhook — Meta webhook verification
 router.get('/', (req, res) => {
@@ -60,7 +65,8 @@ router.get('/ig-status', async (req, res) => {
 router.get('/ig-resolve-mid', async (req, res) => {
   if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
   try {
-    const url = `https://graph.instagram.com/v21.0/${encodeURIComponent(req.query.mid)}?fields=id,from,to,message,created_time`;
+    const fields = req.query.fields || 'id,from,to,message,created_time';
+    const url = `https://graph.instagram.com/v21.0/${encodeURIComponent(req.query.mid)}?fields=${encodeURIComponent(fields)}`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
     });
@@ -124,12 +130,30 @@ router.post('/', async (req, res) => {
         for (const event of entry.messaging || []) {
           const senderId = event.sender?.id;
           const text = event.message?.text;
-          // Skip echoes (mensajes que envió la propia cuenta) — evita loop infinito
-          if (!senderId || event.message?.is_echo) continue;
-          if (senderId === process.env.INSTAGRAM_ACCOUNT_ID) continue;
-          if (!text) continue; // attachments/reactions/postbacks: solo texto por ahora
-          console.log(`[Instagram] ig:${senderId}: "${text.slice(0, 60)}"`);
-          enqueue('ig:' + senderId, text);
+
+          if (senderId && text) {
+            // Shape estándar (Messenger-style) — flujo directo.
+            if (event.message?.is_echo || senderId === process.env.INSTAGRAM_ACCOUNT_ID) continue;
+            console.log(`[Instagram] ig:${senderId}: "${text.slice(0, 60)}"`);
+            enqueue('ig:' + senderId, text);
+            continue;
+          }
+
+          // Fallback: la cuenta manda 'message_edit' sin sender/texto (observado con
+          // "Instagram API with Instagram Login"). Se resuelve consultando la conversación.
+          if (event.message_edit) {
+            try {
+              const latest = await getLatestInstagramMessage();
+              if (!latest || !latest.senderId || !latest.text) continue;
+              if (latest.senderId === process.env.INSTAGRAM_ACCOUNT_ID) continue; // eco propio
+              if (processedIgMids.has(latest.mid)) continue; // ya procesado
+              processedIgMids.add(latest.mid);
+              console.log(`[Instagram:fallback] ig:${latest.senderId}: "${latest.text.slice(0, 60)}"`);
+              enqueue('ig:' + latest.senderId, latest.text);
+            } catch (err) {
+              console.error('[Instagram:fallback] error resolviendo conversación:', err.message);
+            }
+          }
         }
       }
       return;
