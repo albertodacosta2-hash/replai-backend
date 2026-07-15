@@ -54,6 +54,24 @@ router.get('/ig-status', async (req, res) => {
   }
 });
 
+// GET /webhook/ig-resolve-mid?mid=<mid>&secret=<META_VERIFY_TOKEN> — resuelve un
+// message id contra la Graph API para ver su contenido real (sender, texto). Los
+// eventos 'message_edit' que está mandando Meta no traen sender/texto, solo el mid.
+router.get('/ig-resolve-mid', async (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  try {
+    const url = `https://graph.instagram.com/v21.0/${encodeURIComponent(req.query.mid)}?fields=id,from,to,message,created_time`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+    });
+    const data = await resp.json();
+    console.log('[ig-resolve-mid]', resp.status, JSON.stringify(data));
+    res.status(resp.status).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /webhook/ig-debug-token?secret=<META_VERIFY_TOKEN> — inspecciona la FORMA del
 // token guardado en Railway sin exponerlo completo (solo longitud y bordes), para
 // detectar comillas/espacios/valor vacío sin pegar el secreto en ningún lado. Temporal.
