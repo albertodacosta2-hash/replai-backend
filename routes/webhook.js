@@ -31,6 +31,13 @@ function extractMediaBody(msg) {
 router.post('/', async (req, res) => {
   res.sendStatus(200); // ACK inmediato, Meta requiere < 5s
 
+  // Diagnóstico temporal: registra cualquier POST que llegue, sin importar el shape.
+  // Ver comentario en db/index.js (webhook_debug_log) — quitar una vez confirmado Instagram.
+  pool.query(
+    `INSERT INTO webhook_debug_log (object, body) VALUES ($1, $2)`,
+    [req.body?.object || null, JSON.stringify(req.body || {})]
+  ).catch(err => console.error('[webhook debug log] error:', err.message));
+
   try {
     // ── Instagram DM (object === 'instagram') ──
     // Mismo endpoint y verify token que WhatsApp; el payload llega como

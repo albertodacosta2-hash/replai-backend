@@ -117,6 +117,16 @@ async function initDb() {
       enrolled_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (lead_id, sequence_id)
     );
+
+    -- Diagnóstico temporal: captura CUALQUIER POST a /webhook (venga o no de un canal
+    -- reconocido) para confirmar si Meta está llamando al endpoint durante la integración
+    -- de Instagram. Se puede borrar (DROP TABLE webhook_debug_log) una vez confirmado.
+    CREATE TABLE IF NOT EXISTS webhook_debug_log (
+      id         SERIAL PRIMARY KEY,
+      object     TEXT,
+      body       JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 }
 
