@@ -93,7 +93,9 @@ router.get('/ig-conversations-raw', async (req, res) => {
   if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
   try {
     const fields = req.query.fields || 'id,messages.limit(1){id,from,to,message,created_time}';
-    const url = `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_ACCOUNT_ID}/conversations?platform=instagram&fields=${encodeURIComponent(fields)}`;
+    // Permite probar contra un ID distinto al de env (diagnóstico del mismatch de cuenta).
+    const acctId = req.query.acct || process.env.INSTAGRAM_ACCOUNT_ID;
+    const url = `https://graph.instagram.com/v21.0/${acctId}/conversations?platform=instagram&fields=${encodeURIComponent(fields)}`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
     });
