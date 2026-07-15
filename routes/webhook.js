@@ -53,6 +53,27 @@ router.get('/ig-status', async (req, res) => {
   }
 });
 
+// GET /webhook/ig-debug-token?secret=<META_VERIFY_TOKEN> — inspecciona la FORMA del
+// token guardado en Railway sin exponerlo completo (solo longitud y bordes), para
+// detectar comillas/espacios/valor vacío sin pegar el secreto en ningún lado. Temporal.
+router.get('/ig-debug-token', (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  const raw = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const acc = process.env.INSTAGRAM_ACCOUNT_ID;
+  res.json({
+    accessToken: raw ? {
+      length: raw.length,
+      startsWithEAA: raw.startsWith('EAA'),
+      hasLeadingWhitespace: raw !== raw.trimStart(),
+      hasTrailingWhitespace: raw !== raw.trimEnd(),
+      hasQuotes: raw.includes('"') || raw.includes("'"),
+      first6: raw.slice(0, 6),
+      last6: raw.slice(-6),
+    } : 'NO DEFINIDO (undefined)',
+    accountId: acc ? { value: acc, length: acc.length } : 'NO DEFINIDO (undefined)',
+  });
+});
+
 function extractMediaBody(msg) {
   switch (msg.type) {
     case 'image':    return `[imagen:${msg.image?.id}]`;
