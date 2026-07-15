@@ -144,6 +144,11 @@ router.post('/', async (req, res) => {
           if (event.message_edit) {
             try {
               const latest = await getLatestInstagramMessage();
+              // Log a DB del resultado crudo — no hay acceso a logs de consola de Railway.
+              await pool.query(
+                `INSERT INTO webhook_debug_log (object, body) VALUES ('ig-fallback-result', $1)`,
+                [JSON.stringify({ latest })]
+              ).catch(() => {});
               if (!latest || !latest.senderId || !latest.text) continue;
               if (latest.senderId === process.env.INSTAGRAM_ACCOUNT_ID) continue; // eco propio
               if (processedIgMids.has(latest.mid)) continue; // ya procesado
@@ -151,6 +156,10 @@ router.post('/', async (req, res) => {
               console.log(`[Instagram:fallback] ig:${latest.senderId}: "${latest.text.slice(0, 60)}"`);
               enqueue('ig:' + latest.senderId, latest.text);
             } catch (err) {
+              await pool.query(
+                `INSERT INTO webhook_debug_log (object, body) VALUES ('ig-fallback-error', $1)`,
+                [JSON.stringify({ error: err.message })]
+              ).catch(() => {});
               console.error('[Instagram:fallback] error resolviendo conversación:', err.message);
             }
           }
