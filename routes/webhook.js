@@ -16,6 +16,43 @@ router.get('/', (req, res) => {
   res.sendStatus(403);
 });
 
+// GET /webhook/ig-subscribe?secret=<META_VERIFY_TOKEN> — diagnóstico/setup temporal.
+// Verificar el webhook en Meta NO suscribe automáticamente la cuenta de Instagram a
+// recibir eventos; hace falta este llamado explícito a subscribed_apps. Se elimina
+// una vez confirmado que los DMs llegan. Protegido con el mismo secreto del verify token
+// para que no sea un endpoint público abierto.
+router.get('/ig-subscribe', async (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  try {
+    const url = `https://graph.facebook.com/v19.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps?subscribed_fields=messages`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+    });
+    const data = await resp.json();
+    console.log('[ig-subscribe]', resp.status, JSON.stringify(data));
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[ig-subscribe] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /webhook/ig-status?secret=<META_VERIFY_TOKEN> — confirma si la cuenta quedó suscrita.
+router.get('/ig-status', async (req, res) => {
+  if (req.query.secret !== process.env.META_VERIFY_TOKEN) return res.sendStatus(403);
+  try {
+    const url = `https://graph.facebook.com/v19.0/${process.env.INSTAGRAM_ACCOUNT_ID}/subscribed_apps`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` },
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function extractMediaBody(msg) {
   switch (msg.type) {
     case 'image':    return `[imagen:${msg.image?.id}]`;
