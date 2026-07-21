@@ -83,6 +83,7 @@ app.use('/webhook',                  require('./routes/webhook'));      // lo ll
 app.use('/api/leads',      requireAuth, require('./routes/leads'));
 app.use('/api/templates',  requireAuth, require('./routes/templates'));
 app.use('/api/sequences',  requireAuth, require('./routes/sequences'));
+app.use('/api/settings',   requireAuth, require('./routes/settings'));
 
 app.get('/health', (_req, res) => res.json({ ok: true, agent: process.env.AGENT_NAME }));
 

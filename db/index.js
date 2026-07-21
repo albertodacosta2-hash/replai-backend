@@ -118,6 +118,14 @@ async function initDb() {
       PRIMARY KEY (lead_id, sequence_id)
     );
 
+    -- Preferencias de UI del dashboard (idioma). El login es una credencial única
+    -- compartida, así que se persiste por username del JWT, no por fila de usuario.
+    CREATE TABLE IF NOT EXISTS user_prefs (
+      username   TEXT PRIMARY KEY,
+      language   VARCHAR(5) DEFAULT 'es',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     -- Diagnóstico temporal: captura CUALQUIER POST a /webhook (venga o no de un canal
     -- reconocido) para confirmar si Meta está llamando al endpoint durante la integración
     -- de Instagram. Se puede borrar (DROP TABLE webhook_debug_log) una vez confirmado.
