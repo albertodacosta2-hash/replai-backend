@@ -1,9 +1,6 @@
 const { pool } = require('../db');
 const { sendWhatsAppMeta } = require('./metaSender');
-const { hasFollowUpTimer, sessions } = require('./alexAgent');
-
-const FOLLOW_UP_MS = 5 * 60 * 1000; // debe coincidir con alexAgent.js
-const FOLLOW_UP_SECS = Math.round(FOLLOW_UP_MS / 1000);
+const { hasFollowUpTimer, sessions, computeFollowUpAt } = require('./alexAgent');
 
 const FOLLOWUP_CON_EQUIPO = [
   (equipo) => `Hola, ¿alguna duda sobre ${equipo}? Estoy aquí para ayudarte 😊`,
@@ -73,10 +70,10 @@ async function runFollowUpJob() {
           );
           console.log(`[followUpJob] lead → nurturing → ${lead.phone}`);
         } else {
-          // Programa el próximo follow-up en DB para el siguiente ciclo
+          // Programa el próximo follow-up (FU2/FU3) para el día siguiente a las 10am Caracas
           await pool.query(
-            `UPDATE leads SET follow_up_at = NOW() + INTERVAL '${FOLLOW_UP_SECS} seconds', updated_at = NOW() WHERE id = $1`,
-            [lead.id]
+            `UPDATE leads SET follow_up_at = $1, updated_at = NOW() WHERE id = $2`,
+            [computeFollowUpAt(newCount + 1), lead.id]
           );
         }
 

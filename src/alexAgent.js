@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { DateTime } = require('luxon');
 const { pool } = require('../db');
 const { sendWhatsAppMeta } = require('./metaSender');
 const { sendInstagramMessage } = require('./instagramSender');
@@ -33,7 +34,22 @@ function clearSession(phone) {
 
 // ── Follow-up automático (3 mensajes cada 5 min sin respuesta) ──
 const followUpTimers = {};
-const FOLLOW_UP_MS = 5 * 60 * 1000; // 5 min — cambiar a 20*60*1000 en producción
+const FOLLOW_UP_MS = 5 * 60 * 1000; // FU1: 5 min sin respuesta
+const FOLLOW_UP_TZ = 'America/Caracas'; // Venezuela, UTC-4 sin horario de verano
+const FOLLOW_UP_HOUR = 10;              // FU2/FU3: 10:00am hora Caracas
+
+// Devuelve el instante (Date absoluto) en que debe dispararse el próximo follow-up.
+// FU1 → 5 min desde ahora. FU2/FU3 → día siguiente a las 10:00am Caracas (hora fija de
+// calendario, no un offset relativo). Agendado FU2 el día D → D+1 10am; agendado FU3 cuando
+// dispara FU2 (~D+1 10am) → D+2 10am, es decir 2 días después del mensaje original.
+function computeFollowUpAt(nextFollowUpNumber) {
+  if (nextFollowUpNumber <= 1) return new Date(Date.now() + FOLLOW_UP_MS);
+  return DateTime.now()
+    .setZone(FOLLOW_UP_TZ)
+    .plus({ days: 1 })
+    .set({ hour: FOLLOW_UP_HOUR, minute: 0, second: 0, millisecond: 0 })
+    .toJSDate();
+}
 
 const FOLLOWUP_CON_EQUIPO = [
   (equipo) => `Hola, ¿alguna duda sobre ${equipo}? Estoy aquí para ayudarte 😊`,
@@ -62,12 +78,17 @@ function scheduleFollowUp(phone, session, leadId) {
   cancelFollowUp(phone);
   if (session.leadNotified || session.followUpCount >= 3) return;
 
-  const FOLLOW_UP_SECS = Math.round(FOLLOW_UP_MS / 1000);
+  const nextCount = session.followUpCount + 1; // 1, 2 o 3 — cuál follow-up se agenda
+  const when = computeFollowUpAt(nextCount);
   pool.query(
-    `UPDATE leads SET follow_up_at = NOW() + INTERVAL '${FOLLOW_UP_SECS} seconds', updated_at = NOW() WHERE id = $1`,
-    [leadId]
+    `UPDATE leads SET follow_up_at = $1, updated_at = NOW() WHERE id = $2`,
+    [when, leadId]
   ).catch(err => console.error('[alexAgent] schedule follow_up_at:', err.message));
-  console.log(`[alexAgent] follow-up programado en ${FOLLOW_UP_MS / 60000} min → ${phone}`);
+  console.log(`[alexAgent] follow-up #${nextCount} programado para ${when.toISOString()} → ${phone}`);
+
+  // Solo armamos timer en memoria para el FU1 inmediato (~5 min). Los FU2/FU3 son horas de
+  // calendario después y no sobreviven reinicios de Railway: los entrega el job durable.
+  if (nextCount !== 1) return;
 
   followUpTimers[phone] = setTimeout(async () => {
     delete followUpTimers[phone];
@@ -627,4 +648,4 @@ async function _processNext(phone, batch) {
 
 function hasFollowUpTimer(phone) { return !!followUpTimers[phone]; }
 
-module.exports = { enqueue, clearSession, hasFollowUpTimer, sessions, sendToLead, isInstagram };
+module.exports = { enqueue, clearSession, hasFollowUpTimer, sessions, sendToLead, isInstagram, computeFollowUpAt };
