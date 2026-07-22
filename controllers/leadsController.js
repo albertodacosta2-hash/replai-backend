@@ -1,6 +1,10 @@
 const { Readable, PassThrough } = require('stream');
 const { pool } = require('../db');
-const { sendWhatsAppMeta, uploadMediaToMeta, sendWhatsAppMedia } = require('../src/metaSender');
+const { sendWhatsAppTemplate, uploadMediaToMeta, sendWhatsAppMedia } = require('../src/metaSender');
+const { sendToLead, isInstagram } = require('../src/alexAgent');
+
+// Códigos de Meta que indican "fuera de la ventana de 24h" (solo se permite plantilla aprobada).
+const OUTSIDE_WINDOW_CODES = new Set([131047, 131026, 470]);
 const Anthropic = require('@anthropic-ai/sdk');
 const anthropic = new Anthropic();
 
@@ -153,7 +157,33 @@ async function sendHumanMessage(req, res) {
     if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
 
     const { phone } = rows[0];
-    await sendWhatsAppMeta(phone, body);
+
+    // Ruteo por canal (WhatsApp vs Instagram), igual que el agente automático.
+    try {
+      await sendToLead(phone, body);
+    } catch (err) {
+      // Fuera de la ventana de 24h de WhatsApp: solo se permite plantilla aprobada.
+      if (OUTSIDE_WINDOW_CODES.has(err.metaCode) && !isInstagram(phone)) {
+        const tpl = process.env.WA_REENGAGE_TEMPLATE;
+        if (tpl) {
+          // Fallback: plantilla de re-enganche aprobada en Meta Business Manager.
+          await sendWhatsAppTemplate(phone, tpl, process.env.WA_REENGAGE_TEMPLATE_LANG || 'es');
+          await pool.query(
+            `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
+            [id, `[plantilla: ${tpl}]`]
+          );
+          await pool.query(`UPDATE leads SET ai_active = 0, updated_at = NOW() WHERE id = $1`, [id]);
+          return res.json({ ok: true, viaTemplate: true });
+        }
+        return res.status(409).json({
+          error: 'Fuera de la ventana de 24h de WhatsApp',
+          code: 'outside_24h_window',
+          metaMessage: err.metaMessage,
+        });
+      }
+      return res.status(502).json({ error: err.metaMessage || err.message, metaCode: err.metaCode });
+    }
+
     await pool.query(
       `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'human', $2)`,
       [id, body]
@@ -177,6 +207,14 @@ async function sendMediaMessage(req, res) {
     const { rows } = await pool.query('SELECT phone FROM leads WHERE id = $1', [id]);
     if (!rows[0]) return res.status(404).json({ error: 'lead not found' });
     const { phone } = rows[0];
+
+    // El envío de media por Instagram aún no está soportado (instagramSender solo envía texto).
+    if (isInstagram(phone)) {
+      return res.status(400).json({
+        error: 'El envío de archivos/audio a leads de Instagram aún no está disponible',
+        code: 'ig_media_unsupported',
+      });
+    }
 
     let { buffer, mimetype, originalname: filename } = req.file;
 
@@ -280,7 +318,7 @@ Sin markdown, sin listas, tono cálido. Termina con una pregunta breve.`;
 
     const reply = response.content[0]?.text || 'Hola, ¿aún tienes interés en alquilar maquinaria? 😊';
 
-    await sendWhatsAppMeta(phone, reply);
+    await sendToLead(phone, reply);
     await pool.query(
       `INSERT INTO messages (lead_id, direction, sender, body) VALUES ($1, 'outbound', 'ai_agent', $2)`,
       [id, reply]

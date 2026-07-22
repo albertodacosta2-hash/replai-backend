@@ -627,4 +627,4 @@ async function _processNext(phone, batch) {
 
 function hasFollowUpTimer(phone) { return !!followUpTimers[phone]; }
 
-module.exports = { enqueue, clearSession, hasFollowUpTimer, sessions };
+module.exports = { enqueue, clearSession, hasFollowUpTimer, sessions, sendToLead, isInstagram };
